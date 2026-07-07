@@ -27,10 +27,18 @@ npm start
 ## Current Prototype Scope
 
 - Gantt-first view with date axis and milestone markers
+- system selector with rename, add, and empty-system deletion
+- autosave after confirmed edits while keeping a manual save fallback
+- system-level and project-level date markers in the Gantt date header
 - vertical hierarchy: project -> requirement -> stage
 - default stages: requirement clarification, effort estimate, feature development, technical test, business test
 - fold and expand projects and requirements
 - hover tooltip for stage details
 - double-click stage bars to edit dates, assignee, hours, issue status, and notes
 - add projects, requirements, stages, and milestones from the UI
+- select and visually pin a project without changing saved project order
 - persist changes to local JSON
+
+## TODO
+
+- Add a delete button in the top-right toolbar and design the global deletion flow.

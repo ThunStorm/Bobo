@@ -14,17 +14,19 @@
           <p>轻量甘特项目管理</p>
         </div>
         <div class="toolbar">
-          <button id="addProjectBtn" type="button">+ 项目</button>
-          <button id="addMilestoneBtn" type="button">+ 节点</button>
+          <div id="systemPicker" class="system-picker"></div>
           <button id="saveBtn" type="button">保存</button>
           <button id="shutdownBtn" class="danger-button" type="button">&#20851;&#38381;</button>
         </div>
       </header>
 
-      <main class="workspace">
+      <main id="workspace" class="workspace">
         <aside class="side-panel">
           <section>
-            <h2>项目</h2>
+            <div id="projectSectionHead" class="section-head">
+              <h2>项目</h2>
+              <button id="addProjectSideBtn" class="icon-button" type="button" aria-label="新增项目" title="新增项目">+</button>
+            </div>
             <div id="projectList" class="project-list"></div>
           </section>
           <section>
@@ -39,7 +41,16 @@
             </label>
             <button id="fitDatesBtn" type="button">适配任务范围</button>
           </section>
+          <section>
+            <div class="section-head">
+              <h2>日期标记</h2>
+              <button id="addDateMarkerBtn" class="icon-button" type="button" aria-label="新增日期标记" title="新增日期标记">+</button>
+            </div>
+            <div id="markerList" class="marker-list"></div>
+          </section>
         </aside>
+
+        <div id="sideResizeHandle" class="side-resize-handle" role="separator" aria-label="调整左侧栏宽度" tabindex="0"></div>
 
         <section class="gantt-panel" aria-label="甘特图">
           <div id="gantt" class="gantt"></div>

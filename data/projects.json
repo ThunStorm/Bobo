@@ -1,95 +1,222 @@
 {
-  "projects": [
+  "selectedSystemId": "system-a",
+  "systems": [
     {
-      "id": "project-bobo",
-      "name": "Bobo 项目管理工具",
-      "expanded": true,
-      "milestones": [
+      "id": "system-a",
+      "name": "System A",
+      "projects": [
         {
-          "id": "milestone-alpha",
-          "date": "2026-07-15",
-          "label": "内测版"
+          "id": "project-bobo",
+          "name": "BOBO Studio 项目",
+          "expanded": true,
+          "milestones": [
+            {
+              "id": "milestone-alpha",
+              "date": "2026-07-15",
+              "label": "内测版"
+            },
+            {
+              "id": "milestone-demo",
+              "date": "2026-07-31",
+              "label": "演示版"
+            }
+          ],
+          "requirements": [
+            {
+              "id": "req-gantt",
+              "title": "甘特图主体视图",
+              "expanded": true,
+              "stages": [
+                {
+                  "id": "stage-clarify",
+                  "type": "需求澄清",
+                  "title": "确认层级、节点、编辑字段",
+                  "start": "2026-07-07",
+                  "end": "2026-07-09",
+                  "owner": "产品",
+                  "hours": 8,
+                  "status": "进行中",
+                  "issueOpen": true,
+                  "issues": "需要确认功能N是否允许拆成多个并行开发条。",
+                  "notes": "先按项目-需求-阶段三层实现。"
+                },
+                {
+                  "id": "stage-estimate",
+                  "type": "工作量评估",
+                  "title": "评估前后端和本地存储",
+                  "start": "2026-07-10",
+                  "end": "2026-07-11",
+                  "owner": "技术",
+                  "hours": 12,
+                  "status": "未开始",
+                  "issueOpen": false,
+                  "issues": "",
+                  "notes": ""
+                },
+                {
+                  "id": "stage-dev",
+                  "type": "功能N-开发",
+                  "title": "折叠、悬浮、双击编辑",
+                  "start": "2026-07-12",
+                  "end": "2026-07-20",
+                  "owner": "开发",
+                  "hours": 40,
+                  "status": "未开始",
+                  "issueOpen": false,
+                  "issues": "",
+                  "notes": ""
+                },
+                {
+                  "id": "stage-tech-test",
+                  "type": "技术测试",
+                  "title": "多终端访问和 JSON 持久化验证",
+                  "start": "2026-07-21",
+                  "end": "2026-07-24",
+                  "owner": "测试",
+                  "hours": 16,
+                  "status": "未开始",
+                  "issueOpen": false,
+                  "issues": "",
+                  "notes": ""
+                },
+                {
+                  "id": "stage-biz-test",
+                  "type": "业务测试",
+                  "title": "实际项目数据试填",
+                  "start": "2026-07-25",
+                  "end": "2026-07-31",
+                  "owner": "业务",
+                  "hours": 24,
+                  "status": "未开始",
+                  "issueOpen": false,
+                  "issues": "",
+                  "notes": ""
+                },
+                {
+                  "id": "stage-mranzreb-y2m4j",
+                  "type": "需求澄清",
+                  "title": "新阶段",
+                  "start": "2026-07-07",
+                  "end": "2026-07-09",
+                  "owner": "",
+                  "hours": 0,
+                  "status": "未开始",
+                  "issueOpen": false,
+                  "issues": "",
+                  "notes": ""
+                }
+              ]
+            }
+          ],
+          "dateMarkers": []
         },
         {
-          "id": "milestone-demo",
-          "date": "2026-07-31",
-          "label": "演示版"
-        }
-      ],
-      "requirements": [
-        {
-          "id": "req-gantt",
-          "title": "甘特图主体视图",
+          "id": "project-mrao0627-9guou",
+          "name": "Project 2",
           "expanded": true,
-          "stages": [
+          "milestones": [],
+          "requirements": [
             {
-              "id": "stage-clarify",
-              "type": "需求澄清",
-              "title": "确认层级、节点、编辑字段",
-              "start": "2026-07-07",
-              "end": "2026-07-09",
-              "owner": "产品",
-              "hours": 8,
-              "status": "进行中",
-              "issueOpen": true,
-              "issues": "需要确认功能N是否允许拆成多个并行开发条。",
-              "notes": "先按项目-需求-阶段三层实现。"
-            },
+              "id": "req-mraud6x8-7nrr5",
+              "title": "Demand 2.1",
+              "expanded": true,
+              "stages": [
+                {
+                  "id": "stage-mraud6x8-8ytyi",
+                  "type": "需求澄清",
+                  "title": "需求澄清",
+                  "start": "2026-07-08",
+                  "end": "2026-07-09",
+                  "owner": "",
+                  "hours": 0,
+                  "status": "未开始",
+                  "issueOpen": false,
+                  "issues": "",
+                  "notes": ""
+                },
+                {
+                  "id": "stage-mraud6x8-bpfg9",
+                  "type": "工作量及商务",
+                  "title": "工作量及商务11111111111111",
+                  "start": "2026-07-10",
+                  "end": "2026-07-11",
+                  "owner": "",
+                  "hours": 0,
+                  "status": "未开始",
+                  "issueOpen": false,
+                  "issues": "",
+                  "notes": ""
+                },
+                {
+                  "id": "stage-mraud6x8-av3qs",
+                  "type": "功能开发",
+                  "title": "功能开发",
+                  "start": "2026-07-12",
+                  "end": "2026-07-13",
+                  "owner": "",
+                  "hours": 0,
+                  "status": "未开始",
+                  "issueOpen": false,
+                  "issues": "",
+                  "notes": ""
+                },
+                {
+                  "id": "stage-mraud6x8-6nwug",
+                  "type": "技术测试",
+                  "title": "技术测试",
+                  "start": "2026-07-14",
+                  "end": "2026-07-15",
+                  "owner": "",
+                  "hours": 0,
+                  "status": "未开始",
+                  "issueOpen": false,
+                  "issues": "",
+                  "notes": ""
+                },
+                {
+                  "id": "stage-mraud6x8-h27cm",
+                  "type": "业务测试",
+                  "title": "业务测试",
+                  "start": "2026-07-16",
+                  "end": "2026-07-17",
+                  "owner": "",
+                  "hours": 0,
+                  "status": "未开始",
+                  "issueOpen": false,
+                  "issues": "",
+                  "notes": ""
+                }
+              ]
+            }
+          ],
+          "dateMarkers": []
+        },
+        {
+          "id": "project-mrasn9pp-jblkp",
+          "name": "Project 3",
+          "expanded": true,
+          "milestones": [],
+          "dateMarkers": [
             {
-              "id": "stage-estimate",
-              "type": "工作量评估",
-              "title": "评估前后端和本地存储",
-              "start": "2026-07-10",
-              "end": "2026-07-11",
-              "owner": "技术",
-              "hours": 12,
-              "status": "未开始",
-              "issueOpen": false,
-              "issues": "",
-              "notes": ""
-            },
-            {
-              "id": "stage-dev",
-              "type": "功能N-开发",
-              "title": "折叠、悬浮、双击编辑",
-              "start": "2026-07-12",
-              "end": "2026-07-20",
-              "owner": "开发",
-              "hours": 40,
-              "status": "未开始",
-              "issueOpen": false,
-              "issues": "",
-              "notes": ""
-            },
-            {
-              "id": "stage-tech-test",
-              "type": "技术测试",
-              "title": "多终端访问和 JSON 持久化验证",
-              "start": "2026-07-21",
-              "end": "2026-07-24",
-              "owner": "测试",
-              "hours": 16,
-              "status": "未开始",
-              "issueOpen": false,
-              "issues": "",
-              "notes": ""
-            },
-            {
-              "id": "stage-biz-test",
-              "type": "业务测试",
-              "title": "实际项目数据试填",
-              "start": "2026-07-25",
-              "end": "2026-07-31",
-              "owner": "业务",
-              "hours": 24,
-              "status": "未开始",
-              "issueOpen": false,
-              "issues": "",
+              "id": "marker-mrasrd7b-bexan",
+              "date": "2026-07-07",
+              "label": "项目会议",
+              "type": "custom",
+              "color": "blue",
               "notes": ""
             }
-          ]
+          ],
+          "requirements": []
         }
-      ]
+      ],
+      "dateMarkers": []
+    },
+    {
+      "id": "system-b",
+      "name": "System B",
+      "projects": [],
+      "dateMarkers": []
     }
-  ]
+  ],
+  "selectedProjectId": "project-bobo"
 }

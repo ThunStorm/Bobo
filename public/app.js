@@ -1,11 +1,18 @@
-const STAGE_TYPES = ["需求澄清", "工作量评估", "功能N-开发", "技术测试", "业务测试"];
+const STAGE_TYPES = ["需求澄清", "工作量及商务", "功能开发", "技术测试", "业务测试"];
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 const els = {
   gantt: document.querySelector("#gantt"),
   projectList: document.querySelector("#projectList"),
+  workspace: document.querySelector("#workspace"),
+  sideResizeHandle: document.querySelector("#sideResizeHandle"),
+  projectSectionHead: document.querySelector("#projectSectionHead"),
   addProjectBtn: document.querySelector("#addProjectBtn"),
+  addProjectSideBtn: document.querySelector("#addProjectSideBtn"),
   addMilestoneBtn: document.querySelector("#addMilestoneBtn"),
+  addDateMarkerBtn: document.querySelector("#addDateMarkerBtn"),
+  markerList: document.querySelector("#markerList"),
+  systemPicker: document.querySelector("#systemPicker"),
   saveBtn: document.querySelector("#saveBtn"),
   shutdownBtn: document.querySelector("#shutdownBtn"),
   fitDatesBtn: document.querySelector("#fitDatesBtn"),
@@ -28,12 +35,35 @@ const els = {
   deleteStageBtn: document.querySelector("#deleteStageBtn")
 };
 
-let state = { projects: [] };
+let state = { selectedSystemId: "system-a", selectedProjectId: "", systems: [] };
 let view = { start: "", end: "" };
 let editing = null;
+let systemMenuOpen = false;
+let openSystemActionsId = "";
+let editingStageNameId = "";
+let editingProjectNameId = "";
+let editingRequirementNameId = "";
+let draggedStage = null;
+let saveFlashTimer = 0;
+let shouldScrollSelection = false;
+
+const MARKER_COLORS = {
+  purple: "紫色",
+  blue: "蓝色",
+  green: "绿色",
+  orange: "橙色",
+  red: "红色"
+};
 
 function uid(prefix) {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+}
+
+function defaultSystems(projects = []) {
+  return [
+    { id: "system-a", name: "系统A", projects, dateMarkers: [] },
+    { id: "system-b", name: "系统B", projects: [], dateMarkers: [] }
+  ];
 }
 
 function parseDate(value) {
@@ -58,12 +88,215 @@ function daysBetween(start, end) {
   return Math.round((parseDate(end) - parseDate(start)) / MS_PER_DAY);
 }
 
+function isWeekend(value) {
+  const day = parseDate(value).getDay();
+  return day === 0 || day === 6;
+}
+
+function addWorkdays(value, workdaysToAdd) {
+  let date = value;
+  let added = 0;
+  while (added < workdaysToAdd) {
+    date = addDays(date, 1);
+    if (!isWeekend(date)) added += 1;
+  }
+  return date;
+}
+
+function twoWorkdayEnd(start) {
+  return isWeekend(start) ? addWorkdays(start, 2) : addWorkdays(start, 1);
+}
+
 function clampStageDates(stage) {
   if (stage.end < stage.start) stage.end = stage.start;
 }
 
+function getActiveSystem() {
+  let system = state.systems.find((item) => item.id === state.selectedSystemId);
+  if (!system) {
+    system = state.systems[0];
+    state.selectedSystemId = system?.id || "system-a";
+  }
+  return system;
+}
+
+function getActiveProjects() {
+  return getActiveSystem()?.projects || [];
+}
+
+function getSelectedProject() {
+  return getActiveProjects().find((project) => project.id === state.selectedProjectId) || null;
+}
+
+function ensureSelectedProject() {
+  const projects = getActiveProjects();
+  if (!projects.some((project) => project.id === state.selectedProjectId)) {
+    state.selectedProjectId = projects[0]?.id || "";
+  }
+}
+
+function nextSystemName() {
+  const index = state.systems.length;
+  if (index < 26) return `系统${String.fromCharCode(65 + index)}`;
+  return `新系统${index + 1}`;
+}
+
+function normalizeMarker(marker) {
+  marker.id ||= uid("marker");
+  marker.date ||= formatDate(new Date());
+  marker.label ||= "投产日";
+  marker.type ||= marker.label.includes("投产") ? "production" : "custom";
+  marker.color ||= marker.type === "production" ? "purple" : "blue";
+  marker.notes ||= "";
+}
+
+function normalizeProject(project) {
+  project.id ||= uid("project");
+  project.name ||= "未命名项目";
+  project.expanded ??= true;
+  project.milestones ||= [];
+  project.dateMarkers ||= [];
+  project.requirements ||= [];
+  for (const marker of project.dateMarkers) normalizeMarker(marker);
+  for (const requirement of project.requirements) {
+    requirement.id ||= uid("req");
+    requirement.title ||= "未命名需求";
+    requirement.expanded ??= true;
+    requirement.stages ||= [];
+    for (const stage of requirement.stages) {
+      stage.id ||= uid("stage");
+      stage.type ||= STAGE_TYPES[0];
+      stage.title ||= stage.type;
+      stage.start ||= formatDate(new Date());
+      stage.end ||= stage.start;
+      stage.status ||= "未开始";
+      stage.hours = Number(stage.hours || 0);
+      stage.issueOpen = Boolean(stage.issueOpen);
+      clampStageDates(stage);
+    }
+  }
+}
+
+function normalizeState() {
+  if (Array.isArray(state.projects)) {
+    state = {
+      selectedSystemId: "system-a",
+      selectedProjectId: state.projects[0]?.id || "",
+      systems: defaultSystems(state.projects)
+    };
+  }
+
+  if (!Array.isArray(state.systems) || !state.systems.length) {
+    state.systems = defaultSystems();
+  }
+
+  for (const [index, system] of state.systems.entries()) {
+    system.id ||= uid("system");
+    system.name ||= `系统${String.fromCharCode(65 + index)}`;
+    system.projects ||= [];
+    system.dateMarkers ||= [];
+    for (const marker of system.dateMarkers) normalizeMarker(marker);
+    for (const project of system.projects) normalizeProject(project);
+  }
+
+  if (!state.systems.some((system) => system.id === state.selectedSystemId)) {
+    state.selectedSystemId = state.systems[0].id;
+  }
+  ensureSelectedProject();
+}
+
+async function loadState() {
+  const res = await fetch("/api/state");
+  state = await res.json();
+  normalizeState();
+  fitDates();
+  render();
+}
+
+async function saveState() {
+  normalizeState();
+  const res = await fetch("/api/state", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(state)
+  });
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ error: "保存失败" }));
+    throw new Error(error.error || "保存失败");
+  }
+}
+
+function flashSaveStatus(text = "已自动保存") {
+  if (!els.saveBtn) return;
+  window.clearTimeout(saveFlashTimer);
+  els.saveBtn.textContent = text;
+  saveFlashTimer = window.setTimeout(() => { els.saveBtn.textContent = "保存"; }, 1200);
+}
+
+function clampNumber(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function applySavedLayout() {
+  const sideWidth = Number(localStorage.getItem("bobo.sideWidth"));
+  const labelWidth = Number(localStorage.getItem("bobo.labelWidth"));
+  if (sideWidth) document.documentElement.style.setProperty("--side-width", `${clampNumber(sideWidth, 220, 460)}px`);
+  if (labelWidth) document.documentElement.style.setProperty("--label-width", `${clampNumber(labelWidth, 220, 520)}px`);
+}
+
+function startSideResize(event) {
+  event.preventDefault();
+  const startX = event.clientX;
+  const current = Number(getComputedStyle(document.documentElement).getPropertyValue("--side-width").replace("px", "")) || 278;
+  const move = (moveEvent) => {
+    const width = clampNumber(current + moveEvent.clientX - startX, 220, 460);
+    document.documentElement.style.setProperty("--side-width", `${width}px`);
+  };
+  const up = () => {
+    const width = Number(getComputedStyle(document.documentElement).getPropertyValue("--side-width").replace("px", "")) || 278;
+    localStorage.setItem("bobo.sideWidth", String(width));
+    window.removeEventListener("pointermove", move);
+    window.removeEventListener("pointerup", up);
+  };
+  window.addEventListener("pointermove", move);
+  window.addEventListener("pointerup", up);
+}
+
+function startLabelResize(event) {
+  event.preventDefault();
+  event.stopPropagation();
+  const startX = event.clientX;
+  const current = Number(getComputedStyle(document.documentElement).getPropertyValue("--label-width").replace("px", "")) || 290;
+  const move = (moveEvent) => {
+    const width = clampNumber(current + moveEvent.clientX - startX, 220, 520);
+    document.documentElement.style.setProperty("--label-width", `${width}px`);
+  };
+  const up = () => {
+    const width = Number(getComputedStyle(document.documentElement).getPropertyValue("--label-width").replace("px", "")) || 290;
+    localStorage.setItem("bobo.labelWidth", String(width));
+    window.removeEventListener("pointermove", move);
+    window.removeEventListener("pointerup", up);
+  };
+  window.addEventListener("pointermove", move);
+  window.addEventListener("pointerup", up);
+}
+
+async function commitState({ rerender = true, refit = false } = {}) {
+  try {
+    normalizeState();
+    if (refit) fitDates();
+    await saveState();
+    flashSaveStatus();
+    if (rerender) render();
+    return true;
+  } catch (error) {
+    alert(error.message);
+    return false;
+  }
+}
+
 function getAllStages() {
-  return state.projects.flatMap((project) =>
+  return getActiveProjects().flatMap((project) =>
     project.requirements.flatMap((requirement) =>
       requirement.stages.map((stage) => ({ project, requirement, stage }))
     )
@@ -73,9 +306,7 @@ function getAllStages() {
 function getDateRange() {
   const dates = [];
   for (const { stage } of getAllStages()) dates.push(stage.start, stage.end);
-  for (const project of state.projects) {
-    for (const milestone of project.milestones || []) dates.push(milestone.date);
-  }
+  for (const marker of collectDateMarkers()) dates.push(marker.date);
   if (!dates.length) {
     const today = formatDate(new Date());
     return { start: addDays(today, -3), end: addDays(today, 21) };
@@ -92,46 +323,6 @@ function fitDates() {
   els.viewEnd.value = view.end;
 }
 
-async function loadState() {
-  const res = await fetch("/api/state");
-  state = await res.json();
-  normalizeState();
-  fitDates();
-  render();
-}
-
-function normalizeState() {
-  state.projects ||= [];
-  for (const project of state.projects) {
-    project.expanded ??= true;
-    project.milestones ||= [];
-    project.requirements ||= [];
-    for (const requirement of project.requirements) {
-      requirement.expanded ??= true;
-      requirement.stages ||= [];
-      for (const stage of requirement.stages) {
-        stage.status ||= "未开始";
-        stage.hours = Number(stage.hours || 0);
-        stage.issueOpen = Boolean(stage.issueOpen);
-        clampStageDates(stage);
-      }
-    }
-  }
-}
-
-async function saveState() {
-  normalizeState();
-  const res = await fetch("/api/state", {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(state)
-  });
-  if (!res.ok) {
-    const error = await res.json().catch(() => ({ error: "保存失败" }));
-    throw new Error(error.error || "保存失败");
-  }
-}
-
 function datesInView() {
   const days = [];
   const count = daysBetween(view.start, view.end);
@@ -139,55 +330,240 @@ function datesInView() {
   return days;
 }
 
-function milestoneMap() {
-  const map = new Map();
-  for (const project of state.projects) {
-    for (const milestone of project.milestones || []) {
-      const items = map.get(milestone.date) || [];
-      items.push(`${project.name}: ${milestone.label}`);
-      map.set(milestone.date, items);
+function collectDateMarkers() {
+  const markers = [];
+  const system = getActiveSystem();
+  for (const marker of system.dateMarkers || []) {
+    markers.push({ ...marker, scope: "系统", sourceName: system.name });
+  }
+  for (const project of getActiveProjects()) {
+    for (const marker of project.dateMarkers || []) {
+      markers.push({ ...marker, scope: "项目", sourceName: project.name, projectId: project.id });
     }
+    for (const milestone of project.milestones || []) {
+      markers.push({
+        id: milestone.id,
+        date: milestone.date,
+        label: milestone.label,
+        type: "milestone",
+        color: "red",
+        notes: "",
+        scope: "节点",
+        sourceName: project.name,
+        projectId: project.id
+      });
+    }
+  }
+  return markers;
+}
+
+function markerMap() {
+  const map = new Map();
+  for (const marker of collectDateMarkers()) {
+    const items = map.get(marker.date) || [];
+    items.push(marker);
+    map.set(marker.date, items);
   }
   return map;
 }
 
 function render() {
+  ensureSelectedProject();
   els.gantt.innerHTML = "";
   els.projectList.innerHTML = "";
+  renderSystemPicker();
   renderProjectList();
+  renderMarkerList();
   const days = datesInView();
   els.gantt.style.setProperty("--day-count", String(days.length));
-  if (!state.projects.length) {
-    els.gantt.innerHTML = '<div class="empty">暂无项目，点击“+ 项目”开始。</div>';
+  const projects = getActiveProjects();
+  if (!projects.length) {
+    els.gantt.innerHTML = '<div class="empty">当前系统暂无项目，点击左侧“+”开始。</div>';
     return;
   }
-  const milestones = milestoneMap();
-  els.gantt.append(renderHeader(days, milestones));
-  for (const project of state.projects) {
+  const markers = markerMap();
+  els.gantt.append(renderHeader(days, markers));
+  for (const project of projects) {
     els.gantt.append(renderProjectRow(project));
     if (!project.expanded) continue;
     for (const requirement of project.requirements) {
       els.gantt.append(renderRequirementRow(project, requirement));
       if (!requirement.expanded) continue;
-      for (const stage of requirement.stages) els.gantt.append(renderStageRow(project, requirement, stage));
+      for (const stage of requirement.stages) {
+        els.gantt.append(renderStageRow(project, requirement, stage));
+      }
     }
+  }
+  if (shouldScrollSelection) {
+    scrollSelectionIntoView();
+    shouldScrollSelection = false;
   }
 }
 
-function renderHeader(days, milestones) {
+function renderSystemPicker() {
+  if (!els.systemPicker) return;
+  const activeSystem = getActiveSystem();
+  els.systemPicker.innerHTML = "";
+
+  const trigger = document.createElement("button");
+  trigger.type = "button";
+  trigger.className = "system-trigger";
+  trigger.setAttribute("aria-haspopup", "menu");
+  trigger.setAttribute("aria-expanded", String(systemMenuOpen));
+  trigger.innerHTML = `<span>${escapeHtml(activeSystem.name)}</span><span aria-hidden="true">⌄</span>`;
+  trigger.addEventListener("click", (event) => {
+    event.stopPropagation();
+    systemMenuOpen = !systemMenuOpen;
+    openSystemActionsId = "";
+    renderSystemPicker();
+  });
+  els.systemPicker.append(trigger);
+
+  if (!systemMenuOpen) return;
+
+  const menu = document.createElement("div");
+  menu.className = "system-menu";
+  menu.setAttribute("role", "menu");
+
+  for (const system of state.systems) {
+    const row = document.createElement("div");
+    row.className = "system-option";
+    if (system.id === state.selectedSystemId) row.classList.add("active");
+
+    const selectButton = document.createElement("button");
+    selectButton.type = "button";
+    selectButton.className = "system-name-button";
+    selectButton.textContent = system.name;
+    selectButton.addEventListener("click", () => selectSystem(system.id));
+
+    const moreButton = document.createElement("button");
+    moreButton.type = "button";
+    moreButton.className = "system-icon-button";
+    moreButton.title = "系统操作";
+    moreButton.setAttribute("aria-label", `${system.name}操作`);
+    moreButton.textContent = "⋯";
+    moreButton.addEventListener("click", (event) => {
+      event.stopPropagation();
+      openSystemActionsId = openSystemActionsId === system.id ? "" : system.id;
+      renderSystemPicker();
+    });
+
+    row.append(selectButton, moreButton);
+
+    if (openSystemActionsId === system.id) {
+      const actions = document.createElement("div");
+      actions.className = "system-action-popover";
+      const rename = document.createElement("button");
+      rename.type = "button";
+      rename.textContent = "重命名";
+      rename.addEventListener("click", () => renameSystem(system));
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.textContent = "删除系统";
+      remove.addEventListener("click", () => deleteSystem(system));
+      actions.append(rename, remove);
+      row.append(actions);
+    }
+
+    menu.append(row);
+  }
+
+  const addButton = document.createElement("button");
+  addButton.type = "button";
+  addButton.className = "system-add-button";
+  addButton.textContent = "+ 新增系统";
+  addButton.addEventListener("click", addSystem);
+  menu.append(addButton);
+
+  els.systemPicker.append(menu);
+}
+
+async function selectSystem(systemId) {
+  state.selectedSystemId = systemId;
+  ensureSelectedProject();
+  systemMenuOpen = false;
+  openSystemActionsId = "";
+  fitDates();
+  await commitState();
+}
+
+async function addSystem() {
+  const system = {
+    id: uid("system"),
+    name: nextSystemName(),
+    projects: [],
+    dateMarkers: []
+  };
+  state.systems.push(system);
+  state.selectedSystemId = system.id;
+  state.selectedProjectId = "";
+  systemMenuOpen = false;
+  openSystemActionsId = "";
+  await commitState({ refit: true });
+}
+
+async function renameSystem(system) {
+  const name = prompt("系统名称", system.name);
+  if (!name || !name.trim()) return;
+  system.name = name.trim();
+  systemMenuOpen = false;
+  openSystemActionsId = "";
+  await commitState();
+}
+
+async function deleteSystem(system) {
+  if (state.systems.length <= 1) {
+    alert("至少需要保留一个系统。");
+    return;
+  }
+  if ((system.projects || []).length > 0) {
+    alert("请先清空或迁移该系统下的数据，再删除系统。");
+    return;
+  }
+  const confirmed = confirm(`确定删除「${system.name}」吗？`);
+  if (!confirmed) return;
+  state.systems = state.systems.filter((item) => item.id !== system.id);
+  if (state.selectedSystemId === system.id) state.selectedSystemId = state.systems[0].id;
+  systemMenuOpen = false;
+  openSystemActionsId = "";
+  await commitState({ refit: true });
+}
+
+function renderHeader(days, markers) {
   const row = rowEl("header");
-  row.append(labelEl("日期"));
+  const headerLabel = labelEl("日期");
+  const labelResize = document.createElement("button");
+  labelResize.type = "button";
+  labelResize.className = "label-resize-handle";
+  labelResize.title = "调整任务菜单宽度";
+  labelResize.setAttribute("aria-label", "调整任务菜单宽度");
+  labelResize.addEventListener("pointerdown", startLabelResize);
+  headerLabel.append(labelResize);
+  row.append(headerLabel);
   for (const day of days) {
     const date = parseDate(day);
     const cell = document.createElement("div");
     cell.className = "day-cell";
     if ([0, 6].includes(date.getDay())) cell.classList.add("weekend");
     if (day === formatDate(new Date())) cell.classList.add("today");
-    if (milestones.has(day)) {
-      cell.classList.add("milestone");
-      cell.title = milestones.get(day).join("\n");
+    if (markers.has(day)) {
+      const dayMarkers = markers.get(day);
+      cell.classList.add("marked");
+      const primaryColor = dayMarkers.find((marker) => marker.color && marker.color !== "red")?.color || dayMarkers[0].color;
+      if (primaryColor) cell.classList.add(`marker-${primaryColor}`);
+      if (dayMarkers.some((marker) => marker.color === "red")) cell.classList.add("milestone");
+      cell.title = dayMarkers.map((marker) => {
+        const note = marker.notes ? `\n备注：${marker.notes}` : "";
+        return `${marker.scope}：${marker.sourceName} / ${marker.label}${note}`;
+      }).join("\n");
+      const dot = document.createElement("span");
+      dot.className = "date-marker-dot";
+      dot.setAttribute("aria-hidden", "true");
+      cell.append(dot);
     }
-    cell.textContent = `${date.getMonth() + 1}/${date.getDate()}`;
+    const text = document.createElement("span");
+    text.textContent = `${date.getMonth() + 1}/${date.getDate()}`;
+    cell.append(text);
     row.append(cell);
   }
   return row;
@@ -221,48 +597,169 @@ function labelEl(title, indent = "", meta = "") {
   return cell;
 }
 
-function toggleButton(expanded, onClick) {
+function iconButton(label, text, onClick, extraClass = "") {
   const button = document.createElement("button");
-  button.className = "toggle";
+  button.className = `icon-button ${extraClass}`.trim();
   button.type = "button";
-  button.textContent = expanded ? "v" : ">";
+  button.title = label;
+  button.setAttribute("aria-label", label);
+  button.textContent = text;
   button.addEventListener("click", onClick);
   return button;
 }
 
-function gridFill() {
+function toggleButton(expanded, onClick) {
+  const button = document.createElement("button");
+  button.className = `toggle ${expanded ? "expanded" : "collapsed"}`;
+  button.type = "button";
+  button.textContent = expanded ? "▾" : "▸";
+  button.addEventListener("click", onClick);
+  return button;
+}
+
+function gridFill(onDblClick) {
   const grid = document.createElement("div");
   grid.className = "row-grid";
+  if (onDblClick) grid.addEventListener("dblclick", onDblClick);
   return grid;
 }
 
+function getDateFromGridEvent(event) {
+  const rect = event.currentTarget.getBoundingClientRect();
+  const offset = Math.max(0, event.clientX - rect.left);
+  const dayIndex = Math.min(daysBetween(view.start, view.end), Math.floor(offset / Number(getComputedStyle(document.documentElement).getPropertyValue("--day-width").replace("px", ""))));
+  return addDays(view.start, dayIndex);
+}
+
 function renderProjectRow(project) {
-  const row = rowEl("group-row");
+  const selected = project.id === state.selectedProjectId;
+  const row = rowEl(`group-row ${project.expanded ? "expanded" : ""} ${selected ? "selected" : ""}`);
   const label = labelEl(project.name, "", `${project.requirements.length} 需求`);
-  label.prepend(toggleButton(project.expanded, () => { project.expanded = !project.expanded; render(); }));
+  label.prepend(toggleButton(project.expanded, async () => {
+    project.expanded = !project.expanded;
+    state.selectedProjectId = project.id;
+    await commitState();
+  }));
+  label.append(
+    iconButton("新增需求", "+", async (event) => {
+      event.stopPropagation();
+      await addRequirement(project);
+    })
+  );
+  label.addEventListener("click", async () => selectProject(project));
   row.append(label, gridFill());
   return row;
 }
 
 function renderRequirementRow(project, requirement) {
-  const row = rowEl("requirement-row");
-  const label = labelEl(requirement.title, "  ", `${requirement.stages.length} 阶段`);
-  label.prepend(toggleButton(requirement.expanded, () => { requirement.expanded = !requirement.expanded; render(); }));
-  const addStage = document.createElement("button");
-  addStage.type = "button";
-  addStage.title = "添加阶段";
-  addStage.textContent = "+";
-  addStage.className = "icon-button";
-  addStage.addEventListener("click", () => addStageToRequirement(requirement));
-  label.append(addStage);
+  const row = rowEl(`requirement-row ${requirement.expanded ? "expanded" : ""} ${project.id === state.selectedProjectId ? "selected-context" : ""}`);
+  const label = document.createElement("div");
+  label.className = "label-cell requirement-label";
+  const title = document.createElement("input");
+  title.className = "requirement-name-input";
+  title.value = requirement.title;
+  title.disabled = editingRequirementNameId !== requirement.id;
+  title.addEventListener("keydown", async (event) => {
+    if (event.key === "Enter") await saveInlineRequirementName(requirement, title);
+    if (event.key === "Escape") {
+      editingRequirementNameId = "";
+      render();
+    }
+  });
+  label.prepend(toggleButton(requirement.expanded, async () => {
+    requirement.expanded = !requirement.expanded;
+    state.selectedProjectId = project.id;
+    await commitState();
+  }));
+  label.append(
+    title,
+    iconButton(editingRequirementNameId === requirement.id ? "保存需求名称" : "编辑需求名称", editingRequirementNameId === requirement.id ? "✓" : "✎", async (event) => {
+      event.stopPropagation();
+      if (editingRequirementNameId === requirement.id) {
+        await saveInlineRequirementName(requirement, title);
+      } else {
+        editingRequirementNameId = requirement.id;
+        state.selectedProjectId = project.id;
+        render();
+        document.querySelector(`[data-requirement-id="${requirement.id}"] .requirement-name-input`)?.focus();
+      }
+    }),
+    iconButton("新增实施阶段", "+", async (event) => {
+      event.stopPropagation();
+      await addStageToRequirement(requirement);
+    })
+  );
+  row.dataset.requirementId = requirement.id;
   row.append(label, gridFill());
   return row;
 }
 
 function renderStageRow(project, requirement, stage) {
-  const row = rowEl();
-  row.append(labelEl(stage.type, "    ", stage.owner || ""));
-  const grid = gridFill();
+  const row = rowEl("stage-row");
+  row.dataset.stageId = stage.id;
+  const label = document.createElement("div");
+  label.className = "label-cell stage-label";
+
+  const drag = document.createElement("button");
+  drag.type = "button";
+  drag.className = "drag-handle";
+  drag.draggable = true;
+  drag.title = "拖动排序";
+  drag.setAttribute("aria-label", "拖动排序");
+  drag.textContent = "≡";
+  drag.addEventListener("dragstart", (event) => {
+    draggedStage = { requirement, stage };
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", stage.id);
+  });
+  drag.addEventListener("dragend", () => {
+    draggedStage = null;
+    document.querySelectorAll(".stage-row.drag-over").forEach((item) => item.classList.remove("drag-over"));
+  });
+
+  const title = document.createElement("input");
+  title.className = "stage-name-input";
+  title.value = stage.type;
+  title.disabled = editingStageNameId !== stage.id;
+  title.addEventListener("keydown", async (event) => {
+    if (event.key === "Enter") await saveInlineStageName(stage, title);
+    if (event.key === "Escape") {
+      editingStageNameId = "";
+      render();
+    }
+  });
+
+  const edit = iconButton(editingStageNameId === stage.id ? "保存阶段名称" : "编辑阶段名称", editingStageNameId === stage.id ? "✓" : "✎", async () => {
+    if (editingStageNameId === stage.id) {
+      await saveInlineStageName(stage, title);
+    } else {
+      editingStageNameId = stage.id;
+      render();
+      document.querySelector(`[data-stage-id="${stage.id}"] .stage-name-input`)?.focus();
+    }
+  });
+
+  label.append(document.createTextNode("    "), drag, title, edit);
+  row.append(label);
+
+  const grid = gridFill(async (event) => {
+    if (event.target.closest(".stage-bar")) return;
+    const date = getDateFromGridEvent(event);
+    await createStageFromGrid(project, requirement, date);
+  });
+  grid.addEventListener("dragover", (event) => {
+    if (!draggedStage || draggedStage.requirement !== requirement || draggedStage.stage === stage) return;
+    event.preventDefault();
+    row.classList.add("drag-over");
+  });
+  grid.addEventListener("dragleave", () => row.classList.remove("drag-over"));
+  grid.addEventListener("drop", async (event) => {
+    event.preventDefault();
+    row.classList.remove("drag-over");
+    if (!draggedStage || draggedStage.requirement !== requirement || draggedStage.stage === stage) return;
+    await moveStage(requirement, draggedStage.stage, stage);
+  });
+
   const viewEndOffset = daysBetween(view.start, view.end);
   const stageStart = daysBetween(view.start, stage.start);
   const stageEnd = daysBetween(view.start, stage.end);
@@ -284,23 +781,126 @@ function renderStageRow(project, requirement, stage) {
   return row;
 }
 
+async function saveInlineStageName(stage, input) {
+  const value = input.value.trim();
+  if (!value) return;
+  stage.type = value;
+  if (!stage.title || STAGE_TYPES.includes(stage.title)) stage.title = value;
+  editingStageNameId = "";
+  await commitState();
+}
+
+async function saveInlineRequirementName(requirement, input) {
+  const value = input.value.trim();
+  if (!value) return;
+  requirement.title = value;
+  editingRequirementNameId = "";
+  await commitState();
+}
+
+async function moveStage(requirement, sourceStage, targetStage) {
+  const stages = requirement.stages;
+  const from = stages.findIndex((stage) => stage.id === sourceStage.id);
+  const to = stages.findIndex((stage) => stage.id === targetStage.id);
+  if (from < 0 || to < 0 || from === to) return;
+  const [item] = stages.splice(from, 1);
+  stages.splice(to, 0, item);
+  await commitState();
+}
+
 function renderProjectList() {
-  for (const project of state.projects) {
+  for (const project of getActiveProjects()) {
+    const selected = project.id === state.selectedProjectId;
     const item = document.createElement("div");
-    item.className = "project-chip";
+    item.tabIndex = 0;
+    item.setAttribute("role", "button");
+    item.dataset.projectId = project.id;
+    item.className = `project-chip ${selected ? "selected" : ""}`;
+    item.addEventListener("click", () => selectProject(project));
+    item.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      selectProject(project);
+    });
+
     const text = document.createElement("div");
-    text.innerHTML = `<strong>${escapeHtml(project.name)}</strong><span>${project.requirements.length} 个需求，${(project.milestones || []).length} 个节点</span>`;
+    text.className = "project-chip-text";
+    const nameInput = document.createElement("input");
+    nameInput.className = "project-name-input";
+    nameInput.value = project.name;
+    nameInput.disabled = editingProjectNameId !== project.id;
+    nameInput.addEventListener("click", (event) => event.stopPropagation());
+    nameInput.addEventListener("keydown", async (event) => {
+      if (event.key === "Enter") await saveInlineProjectName(project, nameInput);
+      if (event.key === "Escape") {
+        editingProjectNameId = "";
+        render();
+      }
+    });
+    const meta = document.createElement("span");
+    meta.textContent = `${project.requirements.length} 个需求，${(project.milestones || []).length + (project.dateMarkers || []).length} 个标记`;
+    text.append(nameInput, meta);
+
     const actions = document.createElement("div");
     actions.className = "mini-actions";
-    const addReq = document.createElement("button");
-    addReq.type = "button";
-    addReq.title = "添加需求";
-    addReq.textContent = "+";
-    addReq.addEventListener("click", () => addRequirement(project));
-    actions.append(addReq);
+    actions.append(
+      iconButton(editingProjectNameId === project.id ? "保存项目名称" : "编辑项目名称", editingProjectNameId === project.id ? "✓" : "✎", async (event) => {
+        event.stopPropagation();
+        if (editingProjectNameId === project.id) {
+          await saveInlineProjectName(project, nameInput);
+        } else {
+          editingProjectNameId = project.id;
+          state.selectedProjectId = project.id;
+          render();
+          document.querySelector(`[data-project-id="${project.id}"] .project-name-input`)?.focus();
+        }
+      })
+    );
     item.append(text, actions);
     els.projectList.append(item);
   }
+}
+
+function renderMarkerList() {
+  if (!els.markerList) return;
+  els.markerList.innerHTML = "";
+  const system = getActiveSystem();
+  const selectedProject = getSelectedProject();
+  const visibleMarkers = [
+    ...(system.dateMarkers || []).map((marker) => ({ marker, owner: system, scope: "系统", sourceName: system.name })),
+    ...((selectedProject?.dateMarkers || []).map((marker) => ({ marker, owner: selectedProject, scope: "项目", sourceName: selectedProject.name })))
+  ];
+
+  if (!visibleMarkers.length) {
+    const empty = document.createElement("div");
+    empty.className = "marker-empty";
+    empty.textContent = "暂无日期标记";
+    els.markerList.append(empty);
+    return;
+  }
+
+  for (const item of visibleMarkers) {
+    const row = document.createElement("div");
+    row.className = `marker-item marker-${item.marker.color || "blue"}`;
+    const text = document.createElement("span");
+    text.title = item.marker.notes || "";
+    text.textContent = `${item.marker.date} ${item.marker.label} · ${MARKER_COLORS[item.marker.color] || "默认"} · ${item.scope}`;
+    const remove = iconButton("删除日期标记", "×", async () => deleteDateMarker(item.owner, item.marker), "danger-icon");
+    row.append(text, remove);
+    els.markerList.append(row);
+  }
+}
+
+async function selectProject(project) {
+  state.selectedProjectId = project.id;
+  project.expanded = true;
+  shouldScrollSelection = true;
+  await commitState({ refit: true });
+}
+
+function scrollSelectionIntoView() {
+  document.querySelector(".project-chip.selected")?.scrollIntoView({ block: "start", inline: "nearest" });
+  document.querySelector(".gantt-row.group-row.selected")?.scrollIntoView({ block: "start", inline: "nearest" });
 }
 
 function showTooltip(event, project, requirement, stage) {
@@ -321,7 +921,9 @@ function moveTooltip(event) {
   els.tooltip.style.top = `${event.clientY + 14}px`;
 }
 
-function hideTooltip() { els.tooltip.hidden = true; }
+function hideTooltip() {
+  els.tooltip.hidden = true;
+}
 
 function openStageEditor(project, requirement, stage) {
   editing = { project, requirement, stage };
@@ -339,7 +941,7 @@ function openStageEditor(project, requirement, stage) {
   els.dialog.showModal();
 }
 
-function saveStageEditor() {
+async function saveStageEditor() {
   if (!editing) return;
   const stage = editing.stage;
   stage.title = els.editTitle.value.trim() || stage.type;
@@ -354,31 +956,45 @@ function saveStageEditor() {
   stage.notes = els.editNotes.value.trim();
   clampStageDates(stage);
   els.dialog.close();
-  render();
+  await commitState({ refit: true });
 }
 
-function deleteStage() {
+async function deleteStage() {
   if (!editing) return;
+  const confirmed = confirm(`确定删除「${editing.stage.title || editing.stage.type}」吗？`);
+  if (!confirmed) return;
   const stages = editing.requirement.stages;
   const index = stages.findIndex((stage) => stage.id === editing.stage.id);
   if (index >= 0) stages.splice(index, 1);
   editing = null;
   els.dialog.close();
-  render();
+  await commitState({ refit: true });
 }
 
-function addProject() {
+async function addProject() {
   const name = prompt("项目名称");
-  if (!name) return;
-  state.projects.push({ id: uid("project"), name: name.trim(), expanded: true, milestones: [], requirements: [] });
-  render();
+  if (!name || !name.trim()) return;
+  const project = { id: uid("project"), name: name.trim(), expanded: true, milestones: [], dateMarkers: [], requirements: [] };
+  getActiveProjects().push(project);
+  state.selectedProjectId = project.id;
+  await commitState({ refit: true });
 }
 
-function addRequirement(project) {
+async function saveInlineProjectName(project, input) {
+  const value = input.value.trim();
+  if (!value) return;
+  project.name = value;
+  editingProjectNameId = "";
+  state.selectedProjectId = project.id;
+  await commitState();
+}
+
+async function addRequirement(project) {
   const title = prompt(`为「${project.name}」添加需求`);
-  if (!title) return;
+  if (!title || !title.trim()) return;
   const today = formatDate(new Date());
   project.expanded = true;
+  state.selectedProjectId = project.id;
   project.requirements.push({
     id: uid("req"),
     title: title.trim(),
@@ -397,19 +1013,35 @@ function addRequirement(project) {
       notes: ""
     }))
   });
-  fitDates();
-  render();
+  await commitState({ refit: true });
 }
 
-function addStageToRequirement(requirement) {
+async function deleteRequirement(project, requirement) {
+  const confirmed = confirm(`确定删除需求「${requirement.title}」及其全部阶段吗？`);
+  if (!confirmed) return;
+  const index = project.requirements.findIndex((item) => item.id === requirement.id);
+  if (index >= 0) project.requirements.splice(index, 1);
+  state.selectedProjectId = project.id;
+  await commitState({ refit: true });
+}
+
+async function addStageToRequirement(requirement) {
   const today = formatDate(new Date());
+  const stage = createStage("新阶段", STAGE_TYPES[0], today, addDays(today, 2));
   requirement.expanded = true;
-  const stage = {
+  requirement.stages.push(stage);
+  await commitState({ refit: true });
+  const project = getActiveProjects().find((item) => item.requirements.includes(requirement));
+  openStageEditor(project, requirement, stage);
+}
+
+function createStage(title, type, start, end) {
+  return {
     id: uid("stage"),
-    type: STAGE_TYPES[0],
-    title: "新阶段",
-    start: today,
-    end: addDays(today, 2),
+    type,
+    title,
+    start,
+    end,
     owner: "",
     hours: 0,
     status: "未开始",
@@ -417,44 +1049,89 @@ function addStageToRequirement(requirement) {
     issues: "",
     notes: ""
   };
+}
+
+async function createStageFromGrid(project, requirement, start) {
+  const stage = createStage("新任务", STAGE_TYPES[0], start, twoWorkdayEnd(start));
   requirement.stages.push(stage);
-  fitDates();
-  render();
-  const project = state.projects.find((item) => item.requirements.includes(requirement));
+  project.expanded = true;
+  requirement.expanded = true;
+  state.selectedProjectId = project.id;
+  await commitState({ refit: true });
   openStageEditor(project, requirement, stage);
 }
 
-function addMilestone() {
-  if (!state.projects.length) {
-    alert("请先添加项目。");
-    return;
-  }
-  const projectName = prompt(`节点所属项目名称（默认：${state.projects[0].name}）`);
-  const project = state.projects.find((item) => item.name === projectName) || state.projects[0];
-  const label = prompt("节点名称");
-  if (!label) return;
-  const date = prompt("节点日期（YYYY-MM-DD）", formatDate(new Date()));
+async function addDateMarker() {
+  const project = getSelectedProject();
+  const scope = prompt(project ? "标记范围：输入 1 为系统级，输入 2 为当前项目级" : "当前未选择项目，只能新增系统级标记。输入 1 继续", "1");
+  if (!scope) return;
+  const isProjectScope = scope.trim() === "2" && project;
+  const date = prompt("标记日期（YYYY-MM-DD）", formatDate(new Date()));
   if (!date || Number.isNaN(parseDate(date).getTime())) return;
-  project.milestones ||= [];
-  project.milestones.push({ id: uid("milestone"), label: label.trim(), date });
-  fitDates();
-  render();
+  const label = prompt("标记名称", "投产日");
+  if (!label || !label.trim()) return;
+  const colorInput = prompt("标记颜色：紫色/蓝色/绿色/橙色/红色，可留空使用默认颜色", "");
+  const color = resolveMarkerColor(colorInput, label);
+  const notes = prompt("备注（可留空）", "") || "";
+  const type = label.includes("投产") ? "production" : "custom";
+  const marker = {
+    id: uid("marker"),
+    date,
+    label: label.trim(),
+    type,
+    color,
+    notes: notes.trim()
+  };
+  const owner = isProjectScope ? project : getActiveSystem();
+  owner.dateMarkers ||= [];
+  owner.dateMarkers.push(marker);
+  await commitState({ refit: true });
+}
+
+function resolveMarkerColor(input, label) {
+  const value = (input || "").trim().toLowerCase();
+  const colorMap = {
+    "紫": "purple",
+    "紫色": "purple",
+    purple: "purple",
+    "蓝": "blue",
+    "蓝色": "blue",
+    blue: "blue",
+    "绿": "green",
+    "绿色": "green",
+    green: "green",
+    "橙": "orange",
+    "橙色": "orange",
+    orange: "orange",
+    "红": "red",
+    "红色": "red",
+    red: "red"
+  };
+  if (colorMap[value]) return colorMap[value];
+  return label.includes("投产") ? "purple" : "blue";
+}
+
+async function deleteDateMarker(owner, marker) {
+  const confirmed = confirm(`确定删除日期标记「${marker.label}」吗？`);
+  if (!confirmed) return;
+  owner.dateMarkers = (owner.dateMarkers || []).filter((item) => item.id !== marker.id);
+  await commitState({ refit: true });
 }
 
 async function shutdownServer() {
-  const confirmed = confirm("\u786e\u5b9a\u8981\u5173\u95ed Bobo \u670d\u52a1\u5417\uff1f\n\u5173\u95ed\u540e\u9700\u8981\u91cd\u65b0\u8fd0\u884c run.bat \u624d\u80fd\u6253\u5f00\u3002");
+  const confirmed = confirm("确定要关闭 Bobo 服务吗？\n关闭后需要重新运行 run.bat 才能打开。");
   if (!confirmed) return;
 
   try {
     const res = await fetch("/api/shutdown", { method: "POST" });
     if (res.status === 403) {
-      alert("\u4e3a\u4e86\u907f\u514d\u5c40\u57df\u7f51\u8bef\u5173\u670d\u52a1\uff0c\u8bf7\u5728\u670d\u52a1\u6240\u5728\u7535\u8111\u4e0a\u6253\u5f00 localhost \u540e\u518d\u5173\u95ed\uff0c\u6216\u76f4\u63a5\u8fd0\u884c stop.bat\u3002");
+      alert("为了避免局域网误关服务，请在服务所在电脑上打开 localhost 后再关闭，或直接运行 stop.bat。");
       return;
     }
     if (!res.ok) throw new Error("Shutdown request failed");
-    document.body.innerHTML = '<div class="shutdown-screen"><h1>Bobo \u5df2\u5173\u95ed</h1><p>\u9700\u8981\u518d\u6b21\u4f7f\u7528\u65f6\uff0c\u8bf7\u91cd\u65b0\u8fd0\u884c run.bat\u3002</p></div>';
+    document.body.innerHTML = '<div class="shutdown-screen"><h1>Bobo 已关闭</h1><p>需要再次使用时，请重新运行 run.bat。</p></div>';
   } catch (error) {
-    alert(`${"\u5173\u95ed\u5931\u8d25"}: ${error.message}`);
+    alert(`关闭失败: ${error.message}`);
   }
 }
 
@@ -473,16 +1150,18 @@ for (const type of STAGE_TYPES) {
   els.editType.append(option);
 }
 
-els.addProjectBtn.addEventListener("click", addProject);
-els.addMilestoneBtn.addEventListener("click", addMilestone);
+els.addProjectBtn?.addEventListener("click", addProject);
+els.addProjectSideBtn?.addEventListener("click", addProject);
+els.addMilestoneBtn?.addEventListener("click", addDateMarker);
+els.addDateMarkerBtn?.addEventListener("click", addDateMarker);
+els.sideResizeHandle?.addEventListener("pointerdown", startSideResize);
 els.fitDatesBtn.addEventListener("click", () => { fitDates(); render(); });
 els.viewStart.addEventListener("change", () => { view.start = els.viewStart.value; render(); });
 els.viewEnd.addEventListener("change", () => { view.end = els.viewEnd.value; render(); });
 els.saveBtn.addEventListener("click", async () => {
   try {
     await saveState();
-    els.saveBtn.textContent = "已保存";
-    setTimeout(() => { els.saveBtn.textContent = "保存"; }, 1200);
+    flashSaveStatus("已保存");
   } catch (error) {
     alert(error.message);
   }
@@ -490,6 +1169,20 @@ els.saveBtn.addEventListener("click", async () => {
 els.shutdownBtn?.addEventListener("click", shutdownServer);
 els.saveStageBtn.addEventListener("click", saveStageEditor);
 els.deleteStageBtn.addEventListener("click", deleteStage);
+document.addEventListener("click", (event) => {
+  if (!systemMenuOpen || els.systemPicker?.contains(event.target)) return;
+  systemMenuOpen = false;
+  openSystemActionsId = "";
+  renderSystemPicker();
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape" || !systemMenuOpen) return;
+  systemMenuOpen = false;
+  openSystemActionsId = "";
+  renderSystemPicker();
+});
+
+applySavedLayout();
 
 loadState().catch((error) => {
   els.gantt.innerHTML = `<div class="empty">${escapeHtml(error.message)}</div>`;

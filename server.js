@@ -53,8 +53,27 @@ function readBody(req) {
 function ensureDataFile() {
   fs.mkdirSync(dataDir, { recursive: true });
   if (!fs.existsSync(dataFile)) {
-    fs.writeFileSync(dataFile, JSON.stringify({ projects: [] }, null, 2));
+    fs.writeFileSync(dataFile, JSON.stringify({
+      selectedSystemId: "system-a",
+      selectedProjectId: "",
+      systems: [
+        { id: "system-a", name: "系统A", projects: [], dateMarkers: [] },
+        { id: "system-b", name: "系统B", projects: [], dateMarkers: [] }
+      ]
+    }, null, 2));
   }
+}
+
+function isValidState(state) {
+  if (!state || typeof state !== "object") return false;
+  if (Array.isArray(state.projects)) return true;
+  return Array.isArray(state.systems) && state.systems.every((system) =>
+    system &&
+    typeof system === "object" &&
+    typeof system.id === "string" &&
+    typeof system.name === "string" &&
+    Array.isArray(system.projects)
+  );
 }
 
 function saveState(state) {
@@ -118,8 +137,8 @@ async function route(req, res) {
   if (req.url === "/api/state" && req.method === "PUT") {
     try {
       const state = JSON.parse(await readBody(req));
-      if (!state || !Array.isArray(state.projects)) {
-        sendJson(res, 400, { error: "Invalid state: projects must be an array" });
+      if (!isValidState(state)) {
+        sendJson(res, 400, { error: "Invalid state: systems must be an array" });
         return;
       }
       saveState(state);
