@@ -7,7 +7,7 @@
       "projects": [
         {
           "id": "project-bobo",
-          "name": "BOBO Studio 项目",
+          "name": "BOBO Studio项目",
           "expanded": true,
           "milestones": [
             {
@@ -24,7 +24,7 @@
           "requirements": [
             {
               "id": "req-gantt",
-              "title": "甘特图主体视图",
+              "title": "甘特图需求",
               "expanded": true,
               "stages": [
                 {

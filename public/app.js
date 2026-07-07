@@ -739,7 +739,7 @@ function renderStageRow(project, requirement, stage) {
     }
   });
 
-  label.append(document.createTextNode("    "), drag, title, edit);
+  label.append(drag, title, edit);
   row.append(label);
 
   const grid = gridFill(async (event) => {
