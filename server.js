@@ -134,16 +134,7 @@ function getLanUrls() {
   return urls;
 }
 
-ensureDataFile();
-
-const server = http.createServer((req, res) => {
-  route(req, res).catch((error) => {
-    sendJson(res, 500, { error: error.message });
-  });
-});
-
-server.listen(port, host, () => {
-  const localUrl = `http://localhost:${port}`;
+function printStartupUrls(localUrl) {
   console.log(`Bobo is running at ${localUrl}`);
   const lanUrls = getLanUrls();
   if (lanUrls.length) {
@@ -152,6 +143,34 @@ server.listen(port, host, () => {
       console.log(`  ${url}`);
     }
   }
+}
+
+ensureDataFile();
+
+const server = http.createServer((req, res) => {
+  route(req, res).catch((error) => {
+    sendJson(res, 500, { error: error.message });
+  });
+});
+
+server.on("error", (error) => {
+  if (error.code === "EADDRINUSE") {
+    const localUrl = `http://localhost:${port}`;
+    console.log(`Bobo is already running on port ${port}.`);
+    console.log(`Opening existing app at ${localUrl}`);
+    if (shouldOpen) {
+      openBrowser(localUrl);
+    }
+    process.exit(0);
+  }
+
+  console.error(`Bobo failed to start: ${error.message}`);
+  process.exit(1);
+});
+
+server.listen(port, host, () => {
+  const localUrl = `http://localhost:${port}`;
+  printStartupUrls(localUrl);
   if (shouldOpen) {
     openBrowser(localUrl);
   }
