@@ -1,0 +1,13 @@
+{
+  "name": "bobo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A Jira-inspired lite project management studio centered on a Gantt chart.",
+  "scripts": {
+    "start": "node server.js",
+    "start:no-open": "node server.js --no-open"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
