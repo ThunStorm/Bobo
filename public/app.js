@@ -7,6 +7,7 @@ const els = {
   addProjectBtn: document.querySelector("#addProjectBtn"),
   addMilestoneBtn: document.querySelector("#addMilestoneBtn"),
   saveBtn: document.querySelector("#saveBtn"),
+  shutdownBtn: document.querySelector("#shutdownBtn"),
   fitDatesBtn: document.querySelector("#fitDatesBtn"),
   viewStart: document.querySelector("#viewStart"),
   viewEnd: document.querySelector("#viewEnd"),
@@ -440,6 +441,23 @@ function addMilestone() {
   render();
 }
 
+async function shutdownServer() {
+  const confirmed = confirm("\u786e\u5b9a\u8981\u5173\u95ed Bobo \u670d\u52a1\u5417\uff1f\n\u5173\u95ed\u540e\u9700\u8981\u91cd\u65b0\u8fd0\u884c run.bat \u624d\u80fd\u6253\u5f00\u3002");
+  if (!confirmed) return;
+
+  try {
+    const res = await fetch("/api/shutdown", { method: "POST" });
+    if (res.status === 403) {
+      alert("\u4e3a\u4e86\u907f\u514d\u5c40\u57df\u7f51\u8bef\u5173\u670d\u52a1\uff0c\u8bf7\u5728\u670d\u52a1\u6240\u5728\u7535\u8111\u4e0a\u6253\u5f00 localhost \u540e\u518d\u5173\u95ed\uff0c\u6216\u76f4\u63a5\u8fd0\u884c stop.bat\u3002");
+      return;
+    }
+    if (!res.ok) throw new Error("Shutdown request failed");
+    document.body.innerHTML = '<div class="shutdown-screen"><h1>Bobo \u5df2\u5173\u95ed</h1><p>\u9700\u8981\u518d\u6b21\u4f7f\u7528\u65f6\uff0c\u8bf7\u91cd\u65b0\u8fd0\u884c run.bat\u3002</p></div>';
+  } catch (error) {
+    alert(`${"\u5173\u95ed\u5931\u8d25"}: ${error.message}`);
+  }
+}
+
 function escapeHtml(value) {
   return String(value)
     .replaceAll("&", "&amp;")
@@ -469,6 +487,7 @@ els.saveBtn.addEventListener("click", async () => {
     alert(error.message);
   }
 });
+els.shutdownBtn?.addEventListener("click", shutdownServer);
 els.saveStageBtn.addEventListener("click", saveStageEditor);
 els.deleteStageBtn.addEventListener("click", deleteStage);
 

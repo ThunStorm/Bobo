@@ -86,7 +86,28 @@ function serveStatic(req, res) {
   });
 }
 
+function isLocalRequest(req) {
+  const address = req.socket.remoteAddress;
+  return address === "127.0.0.1" || address === "::1" || address === "::ffff:127.0.0.1";
+}
+
+function shutdownServer() {
+  console.log("Bobo shutdown requested.");
+  server.close(() => process.exit(0));
+  setTimeout(() => process.exit(0), 1000).unref();
+}
+
 async function route(req, res) {
+  if (req.url === "/api/shutdown" && req.method === "POST") {
+    if (!isLocalRequest(req)) {
+      sendJson(res, 403, { error: "Shutdown is only allowed from this computer" });
+      return;
+    }
+    sendJson(res, 200, { ok: true, message: "Bobo is shutting down" });
+    setTimeout(shutdownServer, 100).unref();
+    return;
+  }
+
   if (req.url === "/api/state" && req.method === "GET") {
     ensureDataFile();
     const state = JSON.parse(fs.readFileSync(dataFile, "utf8"));
