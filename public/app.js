@@ -613,7 +613,10 @@ function toggleButton(expanded, onClick) {
   button.className = `toggle ${expanded ? "expanded" : "collapsed"}`;
   button.type = "button";
   button.textContent = expanded ? "▾" : "▸";
-  button.addEventListener("click", onClick);
+  button.addEventListener("click", async (event) => {
+    event.stopPropagation();
+    await onClick(event);
+  });
   return button;
 }
 
