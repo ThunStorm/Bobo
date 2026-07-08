@@ -11,6 +11,8 @@
   --green: #2f8f5b;
   --amber: #b7791f;
   --red: #c24132;
+  --dark-red: #8f1f1f;
+  --stage-gray: #98a2b3;
   --blue: #2f6fed;
   --purple: #7c3aed;
   --select-bg: #eaf4ff;
@@ -126,12 +128,16 @@ button:hover { border-color: #aeb8c8; background: #f9fafc; }
 .stage-name-input, .requirement-name-input { min-width: 0; width: 100%; height: 28px; border: 1px solid transparent; border-radius: 5px; padding: 0 6px; color: var(--ink); background: transparent; }
 .stage-name-input:disabled, .requirement-name-input:disabled { color: var(--ink); -webkit-text-fill-color: var(--ink); opacity: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .stage-name-input:not(:disabled), .requirement-name-input:not(:disabled) { border-color: var(--accent); background: #fff; }
-.stage-bar { z-index: 1; min-width: 30px; height: 26px; display: flex; align-items: center; overflow: hidden; border-radius: 6px; padding: 0 8px; color: #fff; background: var(--blue); box-shadow: 0 1px 2px rgba(16, 24, 40, 0.16); cursor: pointer; }
+.stage-bar { z-index: 1; min-width: 30px; height: 26px; display: flex; align-items: center; overflow: hidden; border: 1px solid transparent; border-radius: 6px; padding: 0 8px; color: #fff; background: var(--blue); box-shadow: 0 1px 2px rgba(16, 24, 40, 0.16); cursor: pointer; }
 .stage-bar span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
-.stage-bar[data-status="进行中"] { background: var(--accent); }
-.stage-bar[data-status="已完成"] { background: var(--green); }
-.stage-bar[data-status="暂停"] { background: var(--amber); }
+.stage-bar[data-visual-state="current"] { background: var(--amber); }
+.stage-bar[data-visual-state="upcoming"] { background: var(--blue); }
+.stage-bar[data-visual-state="historical"] { background: var(--stage-gray); }
+.stage-bar[data-visual-state="overdue"] { background: var(--dark-red); }
+.stage-bar[data-visual-state="paused"] { border-color: var(--blue); color: var(--blue); background: #fff; box-shadow: inset 0 0 0 1px rgba(47, 111, 237, 0.24), 0 1px 2px rgba(16, 24, 40, 0.08); }
+.stage-bar[data-visual-state="completed"] { background: var(--green); }
 .stage-bar.issue { box-shadow: inset 0 -3px 0 rgba(255, 255, 255, 0.55), 0 1px 2px rgba(16, 24, 40, 0.16); }
+.stage-bar.issue[data-visual-state="paused"] { box-shadow: inset 0 -3px 0 rgba(47, 111, 237, 0.24), 0 1px 2px rgba(16, 24, 40, 0.08); }
 .tooltip { position: fixed; z-index: 20; max-width: 320px; padding: 10px 12px; border: 1px solid #cfd6e3; border-radius: 6px; color: var(--ink); background: #fff; box-shadow: 0 10px 30px rgba(16, 24, 40, 0.18); font-size: 12px; pointer-events: none; }
 .tooltip strong { display: block; margin-bottom: 4px; font-size: 13px; }
 .editor { width: min(760px, calc(100vw - 40px)); border: 0; border-radius: 8px; padding: 0; box-shadow: 0 24px 80px rgba(16, 24, 40, 0.28); }

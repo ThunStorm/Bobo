@@ -1,4 +1,5 @@
-const STAGE_TYPES = ["需求澄清", "工作量及商务", "功能开发", "技术测试", "业务测试"];
+const DEFAULT_STAGE_TYPES = ["需求澄清", "工作量及商务", "功能开发", "技术测试", "业务测试"];
+let STAGE_TYPES = [...DEFAULT_STAGE_TYPES];
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 const els = {
@@ -214,6 +215,20 @@ async function loadState() {
   normalizeState();
   fitDates();
   render();
+}
+
+async function loadStageConfig() {
+  try {
+    const res = await fetch("/config/stage-types.json", { cache: "no-store" });
+    if (!res.ok) throw new Error("Stage type config not found");
+    const stageTypes = await res.json();
+    if (!Array.isArray(stageTypes)) throw new Error("Stage type config must be an array");
+    const normalized = stageTypes.map((type) => String(type || "").trim()).filter(Boolean);
+    STAGE_TYPES = normalized.length ? [...new Set(normalized)] : [...DEFAULT_STAGE_TYPES];
+  } catch (error) {
+    console.warn(error.message);
+    STAGE_TYPES = [...DEFAULT_STAGE_TYPES];
+  }
 }
 
 async function saveState() {
@@ -737,7 +752,16 @@ function renderStageRow(project, requirement, stage) {
     }
   });
 
-  const edit = iconButton("编辑阶段", "✎", () => openStageEditor(project, requirement, stage));
+  const edit = iconButton(editingStageNameId === stage.id ? "保存阶段名称" : "编辑阶段名称", editingStageNameId === stage.id ? "✓" : "✎", async (event) => {
+    event.stopPropagation();
+    if (editingStageNameId === stage.id) {
+      await saveInlineStageName(stage, title);
+    } else {
+      editingStageNameId = stage.id;
+      render();
+      document.querySelector(`[data-stage-id="${stage.id}"] .stage-name-input`)?.focus();
+    }
+  });
 
   label.append(drag, title, edit);
   row.append(label);
@@ -761,8 +785,10 @@ function renderStageRow(project, requirement, stage) {
   const end = Math.min(viewEndOffset, stageEnd);
   if (end >= 0 && start <= viewEndOffset) {
     const bar = document.createElement("div");
+    const visualState = getStageVisualState(stage);
     bar.className = `stage-bar ${stage.issueOpen ? "issue" : ""}`;
     bar.dataset.status = stage.status;
+    bar.dataset.visualState = visualState;
     bar.style.gridColumn = `${start + 1} / ${end + 2}`;
     bar.innerHTML = `<span>${escapeHtml(stage.title)}</span>`;
     bar.addEventListener("mouseenter", (event) => showTooltip(event, project, requirement, stage));
@@ -926,6 +952,26 @@ async function selectProject(project) {
   await commitState({ refit: true });
 }
 
+function getStageVisualState(stage, today = formatDate(new Date())) {
+  if (stage.status === "超期未完成") return "overdue";
+  if (stage.status === "暂停") return "paused";
+  if (stage.status === "已完成") return "completed";
+  if (stage.end < today) return "historical";
+  if (stage.start > today) return "upcoming";
+  return "current";
+}
+
+function getStageVisualLabel(visualState) {
+  return {
+    current: "当前进行区间",
+    upcoming: "未开始",
+    historical: "历史任务",
+    overdue: "超期未完成",
+    paused: "暂停",
+    completed: "已完成"
+  }[visualState] || "未开始";
+}
+
 function scrollSelectionIntoView() {
   const panel = document.querySelector(".gantt-panel");
   const target = document.querySelector(".gantt-row.group-row.selected");
@@ -938,13 +984,14 @@ function scrollSelectionIntoView() {
 }
 
 function showTooltip(event, project, requirement, stage) {
+  const visualState = getStageVisualState(stage);
   els.tooltip.hidden = false;
   els.tooltip.innerHTML = `
     <strong>${escapeHtml(stage.title)}</strong>
     <div>${escapeHtml(project.name)} / ${escapeHtml(requirement.title)}</div>
     <div>${stage.start} 至 ${stage.end}</div>
     <div>负责人：${escapeHtml(stage.owner || "未分配")} · 工时：${Number(stage.hours || 0)}</div>
-    <div>状态：${escapeHtml(stage.status)} · 问题：${stage.issueOpen ? "未关闭" : "已关闭"}</div>
+    <div>状态：${escapeHtml(stage.status)} · 视觉：${escapeHtml(getStageVisualLabel(visualState))} · 问题：${stage.issueOpen ? "未关闭" : "已关闭"}</div>
     ${stage.issues ? `<div>问题说明：${escapeHtml(stage.issues)}</div>` : ""}
   `;
   moveTooltip(event);
@@ -997,7 +1044,7 @@ function openStageEditor(project, requirement, stage) {
   setEditorMode("stage");
   els.editorTitle.textContent = `${requirement.title} / ${stage.type}`;
   els.editTitle.value = stage.title || "";
-  els.editType.value = stage.type || STAGE_TYPES[0];
+  renderStageTypeOptions(stage);
   els.editStart.value = stage.start;
   els.editEnd.value = stage.end;
   els.editOwner.value = stage.owner || "";
@@ -1043,6 +1090,34 @@ async function saveEditor() {
   editing = null;
   els.dialog.close();
   await commitState({ refit: true });
+}
+
+function renderStageTypeOptions(currentStage) {
+  const defaultSet = new Set(STAGE_TYPES);
+  const seen = new Set();
+  const options = [];
+  const currentType = String(currentStage?.type || STAGE_TYPES[0] || "").trim();
+
+  const addOption = (type) => {
+    const value = String(type || "").trim();
+    if (!value || seen.has(value)) return;
+    seen.add(value);
+    options.push(value);
+  };
+
+  STAGE_TYPES.forEach(addOption);
+  addOption(currentType);
+
+  els.editType.replaceChildren();
+  for (const type of options) {
+    const option = document.createElement("option");
+    option.value = type;
+    option.textContent = type;
+    if (!defaultSet.has(type)) option.dataset.custom = "true";
+    els.editType.append(option);
+  }
+
+  els.editType.value = currentType;
 }
 
 async function deleteEditor() {
@@ -1251,11 +1326,11 @@ function escapeHtml(value) {
     .replaceAll("'", "&#039;");
 }
 
-for (const type of STAGE_TYPES) {
-  const option = document.createElement("option");
-  option.textContent = type;
-  els.editType.append(option);
-}
+els.editType.addEventListener("change", () => {
+  if (editing?.kind !== "stage") return;
+  const nextType = els.editType.value;
+  els.editorTitle.textContent = `${editing.requirement.title} / ${nextType}`;
+});
 
 els.addProjectBtn?.addEventListener("click", addProject);
 els.addProjectSideBtn?.addEventListener("click", addProject);
@@ -1299,6 +1374,11 @@ document.addEventListener("keydown", (event) => {
 
 applySavedLayout();
 
-loadState().catch((error) => {
+async function init() {
+  await loadStageConfig();
+  await loadState();
+}
+
+init().catch((error) => {
   els.gantt.innerHTML = `<div class="empty">${escapeHtml(error.message)}</div>`;
 });
