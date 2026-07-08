@@ -64,16 +64,19 @@
       <form method="dialog" id="editorForm">
         <div class="editor-head">
           <h2 id="editorTitle">编辑阶段</h2>
-          <button class="icon-button" value="cancel" aria-label="关闭" type="submit">x</button>
+          <div class="editor-head-actions">
+            <button id="deleteEditorBtn" class="danger editor-delete" value="delete" type="button">删除</button>
+            <button class="icon-button" value="cancel" aria-label="关闭" type="submit">x</button>
+          </div>
         </div>
         <div class="editor-grid">
-          <label class="field">标题<input id="editTitle" required></label>
-          <label class="field">阶段<select id="editType"></select></label>
-          <label class="field">开始<input id="editStart" type="date" required></label>
-          <label class="field">结束<input id="editEnd" type="date" required></label>
-          <label class="field">负责人<input id="editOwner"></label>
-          <label class="field">工时<input id="editHours" type="number" min="0" step="0.5"></label>
-          <label class="field">
+          <label id="editTitleField" class="field full"><span id="editTitleLabel">标题</span><input id="editTitle" required></label>
+          <label class="field" data-stage-field>阶段<select id="editType"></select></label>
+          <label class="field" data-stage-field>开始<input id="editStart" type="date" required></label>
+          <label class="field" data-stage-field>结束<input id="editEnd" type="date" required></label>
+          <label class="field" data-stage-field>负责人<input id="editOwner"></label>
+          <label class="field" data-stage-field>工时<input id="editHours" type="number" min="0" step="0.5"></label>
+          <label class="field" data-stage-field>
             状态
             <select id="editStatus">
               <option>未开始</option>
@@ -82,15 +85,14 @@
               <option>暂停</option>
             </select>
           </label>
-          <label class="check-field"><input id="editIssueOpen" type="checkbox">当前有未关闭问题</label>
-          <label class="field full">当前问题<textarea id="editIssues" rows="3"></textarea></label>
-          <label class="field full">备注<textarea id="editNotes" rows="3"></textarea></label>
+          <label class="check-field" data-stage-field><input id="editIssueOpen" type="checkbox">当前有未关闭问题</label>
+          <label class="field full" data-stage-field>当前问题<textarea id="editIssues" rows="3"></textarea></label>
+          <label class="field full" data-stage-field>备注<textarea id="editNotes" rows="3"></textarea></label>
         </div>
         <menu class="editor-actions">
-          <button id="deleteStageBtn" class="danger" value="delete" type="button">删除</button>
           <span></span>
           <button value="cancel" type="submit">取消</button>
-          <button id="saveStageBtn" value="default" type="button">保存</button>
+          <button id="saveEditorBtn" value="default" type="button">保存</button>
         </menu>
       </form>
     </dialog>

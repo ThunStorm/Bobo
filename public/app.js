@@ -20,7 +20,10 @@ const els = {
   viewEnd: document.querySelector("#viewEnd"),
   tooltip: document.querySelector("#tooltip"),
   dialog: document.querySelector("#editorDialog"),
+  editorForm: document.querySelector("#editorForm"),
   editorTitle: document.querySelector("#editorTitle"),
+  editorGrid: document.querySelector(".editor-grid"),
+  editTitleLabel: document.querySelector("#editTitleLabel"),
   editTitle: document.querySelector("#editTitle"),
   editType: document.querySelector("#editType"),
   editStart: document.querySelector("#editStart"),
@@ -31,8 +34,8 @@ const els = {
   editIssueOpen: document.querySelector("#editIssueOpen"),
   editIssues: document.querySelector("#editIssues"),
   editNotes: document.querySelector("#editNotes"),
-  saveStageBtn: document.querySelector("#saveStageBtn"),
-  deleteStageBtn: document.querySelector("#deleteStageBtn")
+  saveEditorBtn: document.querySelector("#saveEditorBtn"),
+  deleteEditorBtn: document.querySelector("#deleteEditorBtn")
 };
 
 let state = { selectedSystemId: "system-a", selectedProjectId: "", systems: [] };
@@ -644,12 +647,19 @@ function renderProjectRow(project) {
     await commitState();
   }));
   label.append(
+    iconButton("编辑项目", "✎", (event) => {
+      event.stopPropagation();
+      openProjectEditor(project);
+    }),
     iconButton("新增需求", "+", async (event) => {
       event.stopPropagation();
       await addRequirement(project);
     })
   );
-  label.addEventListener("click", async () => selectProject(project));
+  label.addEventListener("click", async (event) => {
+    if (event.target.closest("button, input, textarea, select")) return;
+    await selectProject(project);
+  });
   row.append(label, gridFill());
   return row;
 }
@@ -676,16 +686,9 @@ function renderRequirementRow(project, requirement) {
   }));
   label.append(
     title,
-    iconButton(editingRequirementNameId === requirement.id ? "保存需求名称" : "编辑需求名称", editingRequirementNameId === requirement.id ? "✓" : "✎", async (event) => {
+    iconButton("编辑需求", "✎", (event) => {
       event.stopPropagation();
-      if (editingRequirementNameId === requirement.id) {
-        await saveInlineRequirementName(requirement, title);
-      } else {
-        editingRequirementNameId = requirement.id;
-        state.selectedProjectId = project.id;
-        render();
-        document.querySelector(`[data-requirement-id="${requirement.id}"] .requirement-name-input`)?.focus();
-      }
+      openRequirementEditor(project, requirement);
     }),
     iconButton("新增实施阶段", "+", async (event) => {
       event.stopPropagation();
@@ -734,15 +737,7 @@ function renderStageRow(project, requirement, stage) {
     }
   });
 
-  const edit = iconButton(editingStageNameId === stage.id ? "保存阶段名称" : "编辑阶段名称", editingStageNameId === stage.id ? "✓" : "✎", async () => {
-    if (editingStageNameId === stage.id) {
-      await saveInlineStageName(stage, title);
-    } else {
-      editingStageNameId = stage.id;
-      render();
-      document.querySelector(`[data-stage-id="${stage.id}"] .stage-name-input`)?.focus();
-    }
-  });
+  const edit = iconButton("编辑阶段", "✎", () => openStageEditor(project, requirement, stage));
 
   label.append(drag, title, edit);
   row.append(label);
@@ -884,16 +879,9 @@ function renderProjectList() {
     const actions = document.createElement("div");
     actions.className = "mini-actions";
     actions.append(
-      iconButton(editingProjectNameId === project.id ? "保存项目名称" : "编辑项目名称", editingProjectNameId === project.id ? "✓" : "✎", async (event) => {
+      iconButton("编辑项目", "✎", (event) => {
         event.stopPropagation();
-        if (editingProjectNameId === project.id) {
-          await saveInlineProjectName(project, nameInput);
-        } else {
-          editingProjectNameId = project.id;
-          state.selectedProjectId = project.id;
-          render();
-          document.querySelector(`[data-project-id="${project.id}"] .project-name-input`)?.focus();
-        }
+        openProjectEditor(project);
       })
     );
     item.append(text, actions);
@@ -971,8 +959,42 @@ function hideTooltip() {
   els.tooltip.hidden = true;
 }
 
+function setEditorMode(kind) {
+  const stageMode = kind === "stage";
+  els.editorGrid?.classList.toggle("compact", !stageMode);
+  els.editTitleLabel.textContent = kind === "project" ? "项目名称" : kind === "requirement" ? "需求名称" : "标题";
+
+  for (const control of [els.editType, els.editStart, els.editEnd, els.editOwner, els.editHours, els.editStatus, els.editIssueOpen, els.editIssues, els.editNotes]) {
+    control.disabled = !stageMode;
+  }
+}
+
+function openProjectEditor(project) {
+  editing = { kind: "project", project };
+  state.selectedProjectId = project.id;
+  setEditorMode("project");
+  els.editorTitle.textContent = `编辑项目 / ${project.name}`;
+  els.editTitle.value = project.name || "";
+  els.dialog.showModal();
+  els.editTitle.focus();
+  els.editTitle.select();
+}
+
+function openRequirementEditor(project, requirement) {
+  editing = { kind: "requirement", project, requirement };
+  state.selectedProjectId = project.id;
+  setEditorMode("requirement");
+  els.editorTitle.textContent = `编辑需求 / ${requirement.title}`;
+  els.editTitle.value = requirement.title || "";
+  els.dialog.showModal();
+  els.editTitle.focus();
+  els.editTitle.select();
+}
+
 function openStageEditor(project, requirement, stage) {
-  editing = { project, requirement, stage };
+  editing = { kind: "stage", project, requirement, stage };
+  state.selectedProjectId = project.id;
+  setEditorMode("stage");
   els.editorTitle.textContent = `${requirement.title} / ${stage.type}`;
   els.editTitle.value = stage.title || "";
   els.editType.value = stage.type || STAGE_TYPES[0];
@@ -985,38 +1007,77 @@ function openStageEditor(project, requirement, stage) {
   els.editIssues.value = stage.issues || "";
   els.editNotes.value = stage.notes || "";
   els.dialog.showModal();
+  els.editTitle.focus();
 }
 
-async function saveStageEditor() {
+async function saveEditor() {
   if (!editing) return;
-  const stage = editing.stage;
-  stage.title = els.editTitle.value.trim() || stage.type;
-  stage.type = els.editType.value;
-  stage.start = els.editStart.value;
-  stage.end = els.editEnd.value;
-  stage.owner = els.editOwner.value.trim();
-  stage.hours = Number(els.editHours.value || 0);
-  stage.status = els.editStatus.value;
-  stage.issueOpen = els.editIssueOpen.checked;
-  stage.issues = els.editIssues.value.trim();
-  stage.notes = els.editNotes.value.trim();
-  clampStageDates(stage);
-  els.dialog.close();
-  await commitState({ refit: true });
-}
+  const value = els.editTitle.value.trim();
+  if (!value && editing.kind !== "stage") {
+    alert("名称不能为空");
+    return;
+  }
 
-async function deleteStage() {
-  if (!editing) return;
-  const confirmed = confirm(`确定删除「${editing.stage.title || editing.stage.type}」吗？`);
-  if (!confirmed) return;
-  const stages = editing.requirement.stages;
-  const index = stages.findIndex((stage) => stage.id === editing.stage.id);
-  if (index >= 0) stages.splice(index, 1);
+  if (editing.kind === "project") {
+    editing.project.name = value;
+    state.selectedProjectId = editing.project.id;
+  } else if (editing.kind === "requirement") {
+    editing.requirement.title = value;
+    state.selectedProjectId = editing.project.id;
+  } else if (editing.kind === "stage") {
+    const stage = editing.stage;
+    const nextType = els.editType.value;
+    stage.title = value || nextType;
+    stage.type = nextType;
+    stage.start = els.editStart.value;
+    stage.end = els.editEnd.value;
+    stage.owner = els.editOwner.value.trim();
+    stage.hours = Number(els.editHours.value || 0);
+    stage.status = els.editStatus.value;
+    stage.issueOpen = els.editIssueOpen.checked;
+    stage.issues = els.editIssues.value.trim();
+    stage.notes = els.editNotes.value.trim();
+    clampStageDates(stage);
+  }
+
   editing = null;
   els.dialog.close();
   await commitState({ refit: true });
 }
 
+async function deleteEditor() {
+  if (!editing) return;
+
+  if (editing.kind === "project") {
+    const project = editing.project;
+    const projects = getActiveProjects();
+    const index = projects.findIndex((item) => item.id === project.id);
+    if (index < 0) return;
+    const markerCount = (project.milestones || []).length + (project.dateMarkers || []).length;
+    const confirmed = confirm(`确定删除项目「${project.name}」及其 ${project.requirements.length} 个需求、全部阶段和 ${markerCount} 个标记吗？`);
+    if (!confirmed) return;
+    projects.splice(index, 1);
+    const replacement = projects[index] || projects[index - 1] || null;
+    state.selectedProjectId = replacement?.id || "";
+  } else if (editing.kind === "requirement") {
+    const { project, requirement } = editing;
+    const confirmed = confirm(`确定删除需求「${requirement.title}」及其全部阶段吗？`);
+    if (!confirmed) return;
+    const index = project.requirements.findIndex((item) => item.id === requirement.id);
+    if (index >= 0) project.requirements.splice(index, 1);
+    state.selectedProjectId = project.id;
+  } else if (editing.kind === "stage") {
+    const { requirement, stage } = editing;
+    const confirmed = confirm(`确定删除阶段「${stage.title || stage.type}」吗？`);
+    if (!confirmed) return;
+    const index = requirement.stages.findIndex((item) => item.id === stage.id);
+    if (index >= 0) requirement.stages.splice(index, 1);
+  }
+
+  editing = null;
+  els.dialog.close();
+  await commitState({ refit: true });
+}
 async function addProject() {
   const name = prompt("项目名称");
   if (!name || !name.trim()) return;
@@ -1213,8 +1274,16 @@ els.saveBtn.addEventListener("click", async () => {
   }
 });
 els.shutdownBtn?.addEventListener("click", shutdownServer);
-els.saveStageBtn.addEventListener("click", saveStageEditor);
-els.deleteStageBtn.addEventListener("click", deleteStage);
+els.editorForm.addEventListener("submit", (event) => {
+  if (event.submitter?.value === "cancel") return;
+  event.preventDefault();
+  saveEditor();
+});
+els.dialog.addEventListener("close", () => {
+  editing = null;
+});
+els.saveEditorBtn.addEventListener("click", saveEditor);
+els.deleteEditorBtn.addEventListener("click", deleteEditor);
 document.addEventListener("click", (event) => {
   if (!systemMenuOpen || els.systemPicker?.contains(event.target)) return;
   systemMenuOpen = false;

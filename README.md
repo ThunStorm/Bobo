@@ -36,9 +36,8 @@ npm start
 - hover tooltip for stage details
 - double-click stage bars to edit dates, assignee, hours, issue status, and notes
 - add projects, requirements, stages, and milestones from the UI
+- edit projects, requirements, and stages through a shared dialog
+- delete projects, requirements, and stages from the dialog top-right with a confirmation prompt
+- cascade deletion: deleting a project removes its requirements, stages, and project markers; deleting a requirement removes its stages
 - select and visually pin a project without changing saved project order
 - persist changes to local JSON
-
-## TODO
-
-- Add a delete button in the top-right toolbar and design the global deletion flow.
