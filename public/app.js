@@ -410,7 +410,7 @@ function renderSystemPicker() {
   trigger.className = "system-trigger";
   trigger.setAttribute("aria-haspopup", "menu");
   trigger.setAttribute("aria-expanded", String(systemMenuOpen));
-  trigger.innerHTML = `<span>${escapeHtml(activeSystem.name)}</span><span aria-hidden="true">⌄</span>`;
+  trigger.innerHTML = `<span>${escapeHtml(activeSystem.name)}</span><span aria-hidden="true">▾</span>`;
   trigger.addEventListener("click", (event) => {
     event.stopPropagation();
     systemMenuOpen = !systemMenuOpen;
