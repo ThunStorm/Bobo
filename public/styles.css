@@ -48,8 +48,8 @@ button:hover { border-color: #aeb8c8; background: #f9fafc; }
 .system-add-button { width: 100%; margin-top: 6px; border-style: dashed; color: var(--accent-strong); background: #fbfdfe; }
 #saveBtn, #saveStageBtn { border-color: var(--accent); color: #fff; background: var(--accent); }
 #saveBtn:hover, #saveStageBtn:hover { background: var(--accent-strong); }
-.workspace { min-height: calc(100vh - 72px); display: grid; grid-template-columns: var(--side-width) 6px minmax(0, 1fr); }
-.side-panel { border-right: 1px solid var(--line); background: #fbfcfe; overflow: auto; }
+.workspace { height: calc(100vh - 72px); min-height: 0; display: grid; grid-template-columns: var(--side-width) 6px minmax(0, 1fr); overflow: hidden; }
+.side-panel { min-height: 0; border-right: 1px solid var(--line); background: #fbfcfe; overflow: auto; }
 .side-resize-handle { position: relative; z-index: 10; background: #eef2f7; cursor: col-resize; border-right: 1px solid var(--line); }
 .side-resize-handle:hover, .side-resize-handle:focus { background: #dbeafe; outline: 0; }
 .side-resize-handle::after { content: ""; position: absolute; top: 0; bottom: 0; left: 2px; width: 2px; background: #c5cfdd; }
@@ -66,7 +66,7 @@ button:hover { border-color: #aeb8c8; background: #f9fafc; }
 .project-chip span { display: block; color: var(--muted); font-size: 12px; }
 .project-chip-text { min-width: 0; }
 .project-name-input { min-width: 0; width: 100%; height: 24px; border: 1px solid transparent; border-radius: 5px; padding: 0 4px; color: var(--ink); background: transparent; font-weight: 700; }
-.project-name-input:disabled { color: var(--ink); -webkit-text-fill-color: var(--ink); opacity: 1; }
+.project-name-input:disabled { color: var(--ink); -webkit-text-fill-color: var(--ink); opacity: 1; pointer-events: none; }
 .project-name-input:not(:disabled) { border-color: var(--accent); background: #fff; }
 .mini-actions { display: flex; gap: 4px; }
 .mini-actions button, .icon-button { width: 32px; min-width: 32px; padding: 0; }
@@ -83,7 +83,7 @@ button:hover { border-color: #aeb8c8; background: #f9fafc; }
 .field { display: grid; gap: 6px; margin-bottom: 10px; color: var(--muted); font-size: 12px; }
 .field input, .field select, .field textarea { min-height: 34px; width: 100%; border: 1px solid var(--line); border-radius: 6px; padding: 7px 9px; color: var(--ink); background: #fff; }
 .field textarea { resize: vertical; }
-.gantt-panel { min-width: 0; overflow: auto; background: var(--panel); }
+.gantt-panel { min-width: 0; min-height: 0; overflow: auto; background: var(--panel); }
 .gantt { position: relative; width: max-content; min-width: 100%; }
 .gantt-row { display: grid; grid-template-columns: var(--label-width) repeat(var(--day-count), var(--day-width)); min-height: var(--row-height); border-bottom: 1px solid var(--soft-line); }
 .gantt-row.header { position: sticky; top: 0; z-index: 5; min-height: 52px; border-bottom: 1px solid var(--line); background: #fff; }

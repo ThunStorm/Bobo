@@ -829,7 +829,9 @@ function renderProjectList() {
     nameInput.className = "project-name-input";
     nameInput.value = project.name;
     nameInput.disabled = editingProjectNameId !== project.id;
-    nameInput.addEventListener("click", (event) => event.stopPropagation());
+    nameInput.addEventListener("click", (event) => {
+      if (editingProjectNameId === project.id) event.stopPropagation();
+    });
     nameInput.addEventListener("keydown", async (event) => {
       if (event.key === "Enter") await saveInlineProjectName(project, nameInput);
       if (event.key === "Escape") {
@@ -899,8 +901,14 @@ async function selectProject(project) {
 }
 
 function scrollSelectionIntoView() {
-  document.querySelector(".project-chip.selected")?.scrollIntoView({ block: "start", inline: "nearest" });
-  document.querySelector(".gantt-row.group-row.selected")?.scrollIntoView({ block: "start", inline: "nearest" });
+  const panel = document.querySelector(".gantt-panel");
+  const target = document.querySelector(".gantt-row.group-row.selected");
+  if (!panel || !target) return;
+
+  const panelRect = panel.getBoundingClientRect();
+  const targetRect = target.getBoundingClientRect();
+  const headerHeight = document.querySelector(".gantt-row.header")?.getBoundingClientRect().height || 0;
+  panel.scrollTop += targetRect.top - panelRect.top - headerHeight;
 }
 
 function showTooltip(event, project, requirement, stage) {
