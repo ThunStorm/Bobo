@@ -709,12 +709,14 @@ function renderStageRow(project, requirement, stage) {
   drag.textContent = "≡";
   drag.addEventListener("dragstart", (event) => {
     draggedStage = { requirement, stage };
-    event.dataTransfer.effectAllowed = "move";
-    event.dataTransfer.setData("text/plain", stage.id);
+    if (event.dataTransfer) {
+      event.dataTransfer.effectAllowed = "move";
+      event.dataTransfer.setData("text/plain", stage.id);
+    }
   });
   drag.addEventListener("dragend", () => {
     draggedStage = null;
-    document.querySelectorAll(".stage-row.drag-over").forEach((item) => item.classList.remove("drag-over"));
+    clearStageDropIndicators();
   });
 
   const title = document.createElement("input");
@@ -742,22 +744,16 @@ function renderStageRow(project, requirement, stage) {
   label.append(drag, title, edit);
   row.append(label);
 
+  row.addEventListener("dragover", (event) => handleStageDragOver(event, requirement, stage, row));
+  row.addEventListener("dragleave", (event) => {
+    if (!row.contains(event.relatedTarget)) clearStageDropIndicators();
+  });
+  row.addEventListener("drop", async (event) => handleStageDrop(event, requirement, stage, row));
+
   const grid = gridFill(async (event) => {
-    if (event.target.closest(".stage-bar")) return;
+    if (draggedStage || event.target.closest(".stage-bar")) return;
     const date = getDateFromGridEvent(event);
     await createStageFromGrid(project, requirement, date);
-  });
-  grid.addEventListener("dragover", (event) => {
-    if (!draggedStage || draggedStage.requirement !== requirement || draggedStage.stage === stage) return;
-    event.preventDefault();
-    row.classList.add("drag-over");
-  });
-  grid.addEventListener("dragleave", () => row.classList.remove("drag-over"));
-  grid.addEventListener("drop", async (event) => {
-    event.preventDefault();
-    row.classList.remove("drag-over");
-    if (!draggedStage || draggedStage.requirement !== requirement || draggedStage.stage === stage) return;
-    await moveStage(requirement, draggedStage.stage, stage);
   });
 
   const viewEndOffset = daysBetween(view.start, view.end);
@@ -798,12 +794,51 @@ async function saveInlineRequirementName(requirement, input) {
   await commitState();
 }
 
-async function moveStage(requirement, sourceStage, targetStage) {
+function clearStageDropIndicators() {
+  document.querySelectorAll(".stage-row.drag-over, .stage-row.drag-before, .stage-row.drag-after").forEach((item) => {
+    item.classList.remove("drag-over", "drag-before", "drag-after");
+  });
+}
+
+function getStageDropPlacement(row, event) {
+  const rect = row.getBoundingClientRect();
+  return event.clientY < rect.top + rect.height / 2 ? "before" : "after";
+}
+
+function canDropStage(requirement, stage) {
+  return draggedStage && draggedStage.requirement === requirement && draggedStage.stage !== stage;
+}
+
+function handleStageDragOver(event, requirement, stage, row) {
+  if (!canDropStage(requirement, stage)) return;
+  event.preventDefault();
+  if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+  const placement = getStageDropPlacement(row, event);
+  clearStageDropIndicators();
+  row.classList.add("drag-over", placement === "before" ? "drag-before" : "drag-after");
+}
+
+async function handleStageDrop(event, requirement, stage, row) {
+  if (!canDropStage(requirement, stage)) return;
+  event.preventDefault();
+  const placement = getStageDropPlacement(row, event);
+  clearStageDropIndicators();
+  const sourceStage = draggedStage.stage;
+  draggedStage = null;
+  await moveStage(requirement, sourceStage, stage, placement);
+}
+
+async function moveStage(requirement, sourceStage, targetStage, placement = "before") {
   const stages = requirement.stages;
   const from = stages.findIndex((stage) => stage.id === sourceStage.id);
-  const to = stages.findIndex((stage) => stage.id === targetStage.id);
-  if (from < 0 || to < 0 || from === to) return;
+  if (from < 0 || sourceStage.id === targetStage.id) return;
   const [item] = stages.splice(from, 1);
+  let to = stages.findIndex((stage) => stage.id === targetStage.id);
+  if (to < 0) {
+    stages.splice(from, 0, item);
+    return;
+  }
+  if (placement === "after") to += 1;
   stages.splice(to, 0, item);
   await commitState();
 }
