@@ -1,48 +1,87 @@
 # Bobo
 
-Bobo is a Jira-inspired, ultra-light project management studio centered on a Gantt chart.
+Bobo 是一个运行在 Windows 上的极简甘特图项目管理工具。它面向小型团队与局域网协作，采用“系统 -> 项目 -> 需求 -> 阶段”的轻量层级，不依赖数据库，所有数据保存在本地 JSON 文件中。
 
-It is designed for small LAN teams on Windows:
+## 核心能力
 
-- double-click `run.bat` to start locally
-- open the browser automatically at `http://localhost:4177`
-- access from other devices on the same LAN through `http://<this-computer-ip>:4177`
-- store project data in `data/projects.json`
-- no database and no npm install required
+- 甘特图为主视图：日期横轴、项目/需求/阶段纵轴，支持里程碑与日期标记。
+- 多系统管理：可新建、重命名和切换系统；每个系统维护独立项目数据。
+- 三层工作分解：项目下可添加需求，需求下可添加多个阶段。
+- 灵活折叠：项目和需求均可展开或收起；左侧导航和右侧甘特图独立滚动。
+- 直接编辑：双击阶段条或使用编辑按钮，维护标题、日期、负责人、工时、状态、问题与备注。
+- 问题状态提示：阶段条标题前的红点表示存在未解决问题，绿点表示问题已全部解决；未来日期创建的阶段默认标记为存在未解决问题。
+- 阶段视觉状态：当前进行中的阶段为琥珀色，未来阶段为蓝色，历史阶段为灰色，已完成为绿色，超期未完成为深红色，暂停为蓝色描边。
+- 删除保护：项目、需求、阶段均在编辑弹窗右上角删除，并要求二次确认。删除项目会级联删除其需求、阶段和项目日期标记；删除需求会级联删除其阶段。
+- 本地保存：编辑后自动写入本地 JSON，同时保留手动“保存”按钮。
+- 本机关闭：界面“关闭”按钮仅允许本机调用，用于安全停止本地服务。
 
-## Run
+## 运行环境
 
-Requires Node.js 18+.
+- Windows
+- Node.js 18 或更高版本
+- 不需要安装 npm 依赖
 
-```powershell
-.\run.bat
-```
+## 启动
 
-Or:
+双击 `run.bat`，或在项目目录执行：
 
 ```powershell
 npm start
 ```
 
-## Current Prototype Scope
+仅启动服务而不自动打开浏览器：
 
-- Gantt-first view with date axis and milestone markers
-- system selector with rename, add, and empty-system deletion
-- autosave after confirmed edits while keeping a manual save fallback
-- system-level and project-level date markers in the Gantt date header
-- vertical hierarchy: project -> requirement -> stage
-- default stages: requirement clarification, effort estimate, feature development, technical test, business test
-- fold and expand projects and requirements
-- hover tooltip for stage details
-- double-click stage bars to edit dates, assignee, hours, issue status, and notes
-- stage bars use status-aware colors: current date range is amber, future work is blue, historical work is gray, completed work is green, overdue unfinished work is dark red, and paused work is a hollow blue bar
-- add projects, requirements, stages, and milestones from the UI
-- edit projects, requirements, and stages through a shared dialog
-- delete projects, requirements, and stages from the dialog top-right with a confirmation prompt
-- cascade deletion: deleting a project removes its requirements, stages, and project markers; deleting a requirement removes its stages
-- select and visually pin a project without changing saved project order
-- persist changes to local JSON
+```powershell
+npm run start:no-open
+```
 
-## Development Notes
+默认访问地址为：
 
-- After adding a large feature or module, or after fixing a major bug or logic issue, run the checks, update this README when behavior changes, commit the tested code to git, and use a commit message that describes the change.
+```text
+http://localhost:4177/
+```
+
+如果默认端口已被已有 Bobo 实例占用，启动脚本会提示并打开该实例，而不会重复启动服务。
+
+## 局域网访问
+
+服务默认监听所有网络接口。启动后，终端会列出可供局域网设备访问的地址：
+
+```text
+http://<本机 IP>:4177/
+```
+
+请确保 Windows 防火墙允许 Node.js 的局域网连接。
+
+## 数据与备份
+
+运行数据保存在：
+
+```text
+data/projects.json
+```
+
+该文件包含当前选中系统、项目、需求、阶段、日期标记以及界面折叠状态。备份或迁移时，先关闭 Bobo，再复制此文件即可。
+
+## 项目结构
+
+```text
+Bobo/
+├─ data/projects.json       # 本地项目数据
+├─ public/                  # 浏览器界面、样式与交互逻辑
+├─ server.js                # 本地 HTTP 服务与 JSON 保存接口
+├─ run.bat                  # Windows 双击启动脚本
+└─ README.md
+```
+
+## 开发检查
+
+修改前端逻辑或服务代码后，可执行：
+
+```powershell
+node --check public/app.js
+node --check server.js
+git diff --check
+```
+
+`.sync-conflict-*` 文件是外部同步工具产生的临时冲突副本，不参与 Bobo 运行，已由 `.gitignore` 排除。

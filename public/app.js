@@ -790,7 +790,9 @@ function renderStageRow(project, requirement, stage) {
     bar.dataset.status = stage.status;
     bar.dataset.visualState = visualState;
     bar.style.gridColumn = `${start + 1} / ${end + 2}`;
-    bar.innerHTML = `<span>${escapeHtml(stage.title)}</span>`;
+    const issueState = stage.issueOpen ? "open" : "resolved";
+    const issueLabel = stage.issueOpen ? "存在未解决问题" : "问题已全部解决";
+    bar.innerHTML = `<span class="stage-issue-dot ${issueState}" role="img" aria-label="${issueLabel}" title="${issueLabel}"></span><span class="stage-bar-title">${escapeHtml(stage.title)}</span>`;
     bar.addEventListener("mouseenter", (event) => showTooltip(event, project, requirement, stage));
     bar.addEventListener("mousemove", moveTooltip);
     bar.addEventListener("mouseleave", hideTooltip);
@@ -1190,7 +1192,7 @@ async function addRequirement(project) {
       owner: "",
       hours: 0,
       status: "未开始",
-      issueOpen: false,
+      issueOpen: addDays(today, index * 2) > today,
       issues: "",
       notes: ""
     }))
@@ -1227,7 +1229,7 @@ function createStage(title, type, start, end) {
     owner: "",
     hours: 0,
     status: "未开始",
-    issueOpen: false,
+    issueOpen: start > formatDate(new Date()),
     issues: "",
     notes: ""
   };

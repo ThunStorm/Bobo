@@ -36,7 +36,7 @@
                   "owner": "产品",
                   "hours": 8,
                   "status": "进行中",
-                  "issueOpen": true,
+                  "issueOpen": false,
                   "issues": "需要确认功能N是否允许拆成多个并行开发条。",
                   "notes": "先按项目-需求-阶段三层实现。"
                 },
@@ -62,7 +62,7 @@
                   "owner": "开发",
                   "hours": 40,
                   "status": "未开始",
-                  "issueOpen": false,
+                  "issueOpen": true,
                   "issues": "",
                   "notes": ""
                 },
@@ -113,7 +113,7 @@
                   "end": "2026-07-17",
                   "owner": "",
                   "hours": 0,
-                  "status": "未开始",
+                  "status": "暂停",
                   "issueOpen": false,
                   "issues": "",
                   "notes": ""
@@ -139,7 +139,7 @@
         {
           "id": "project-mrao0627-9guou",
           "name": "Project 2",
-          "expanded": true,
+          "expanded": false,
           "milestones": [],
           "requirements": [
             {
@@ -292,7 +292,7 @@
         {
           "id": "project-mrasn9pp-jblkp",
           "name": "Project 3",
-          "expanded": true,
+          "expanded": false,
           "milestones": [],
           "dateMarkers": [
             {
