@@ -1,0 +1,39 @@
+{
+  "projectId": "project-bobo",
+  "issues": [
+    {
+      "id": "issue-mrkgerrt-suih66",
+      "projectId": "project-bobo",
+      "stageId": "stage-clarify",
+      "title": "需要确认功能N是否允许拆成多个并行开发条。",
+      "description": "需要确认功能N是否允许拆成多个并行开发条。",
+      "status": "closed",
+      "assigneeUserId": "",
+      "createdByUserId": "",
+      "createdAt": "2026-07-14T09:33:39.737Z",
+      "updatedByUserId": "",
+      "updatedAt": "2026-07-14T09:33:39.737Z",
+      "closedByUserId": "",
+      "closedAt": "",
+      "legacyClosureUnknown": true,
+      "version": 1
+    },
+    {
+      "id": "issue-mrkgerrt-87cjzw",
+      "projectId": "project-bobo",
+      "stageId": "stage-dev",
+      "title": "待处理：折叠、悬浮、双击编辑",
+      "description": "",
+      "status": "open",
+      "assigneeUserId": "",
+      "createdByUserId": "",
+      "createdAt": "2026-07-14T09:33:39.737Z",
+      "updatedByUserId": "",
+      "updatedAt": "2026-07-14T09:33:39.737Z",
+      "closedByUserId": "",
+      "closedAt": "",
+      "legacyClosureUnknown": false,
+      "version": 1
+    }
+  ]
+}

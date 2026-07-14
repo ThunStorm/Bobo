@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 2,
+  "systems": [
+    {
+      "id": "system-a",
+      "name": "System A",
+      "version": 1,
+      "dateMarkers": [],
+      "projectIds": [
+        "project-bobo",
+        "project-mrao0627-9guou",
+        "project-mrasn9pp-jblkp"
+      ]
+    },
+    {
+      "id": "system-b",
+      "name": "System B",
+      "version": 1,
+      "dateMarkers": [],
+      "projectIds": []
+    }
+  ]
+}

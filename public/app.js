@@ -210,8 +210,8 @@ function normalizeState() {
 }
 
 async function loadState() {
-  const res = await fetch("/api/state");
-  state = await res.json();
+  const payload = await BoboCollab.loadBootstrap();
+  state = payload.state;
   normalizeState();
   fitDates();
   render();
@@ -233,15 +233,7 @@ async function loadStageConfig() {
 
 async function saveState() {
   normalizeState();
-  const res = await fetch("/api/state", {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(state)
-  });
-  if (!res.ok) {
-    const error = await res.json().catch(() => ({ error: "保存失败" }));
-    throw new Error(error.error || "保存失败");
-  }
+  await BoboCollab.saveState(state);
 }
 
 function flashSaveStatus(text = "已自动保存") {
@@ -392,6 +384,7 @@ function render() {
   renderSystemPicker();
   renderProjectList();
   renderMarkerList();
+  BoboCollab.savePreferences(state, view);
   const days = datesInView();
   els.gantt.style.setProperty("--day-count", String(days.length));
   const projects = getActiveProjects();
@@ -1010,6 +1003,7 @@ function hideTooltip() {
 
 function setEditorMode(kind) {
   const stageMode = kind === "stage";
+  BoboCollab.resetEditor(kind);
   els.editorGrid?.classList.toggle("compact", !stageMode);
   els.editTitleLabel.textContent = kind === "project" ? "项目名称" : kind === "requirement" ? "需求名称" : "标题";
 
@@ -1055,6 +1049,7 @@ function openStageEditor(project, requirement, stage) {
   els.editIssueOpen.checked = Boolean(stage.issueOpen);
   els.editIssues.value = stage.issues || "";
   els.editNotes.value = stage.notes || "";
+  BoboCollab.openStageIssues(project, requirement, stage);
   els.dialog.showModal();
   els.editTitle.focus();
 }
@@ -1083,8 +1078,6 @@ async function saveEditor() {
     stage.owner = els.editOwner.value.trim();
     stage.hours = Number(els.editHours.value || 0);
     stage.status = els.editStatus.value;
-    stage.issueOpen = els.editIssueOpen.checked;
-    stage.issues = els.editIssues.value.trim();
     stage.notes = els.editNotes.value.trim();
     clampStageDates(stage);
   }
@@ -1379,6 +1372,10 @@ applySavedLayout();
 async function init() {
   await loadStageConfig();
   await loadState();
+  BoboCollab.configure({
+    onStateChanged: () => render(),
+    onExternalChange: async () => loadState()
+  });
 }
 
 init().catch((error) => {

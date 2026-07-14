@@ -5,7 +5,8 @@
   "description": "A Jira-inspired lite project management studio centered on a Gantt chart.",
   "scripts": {
     "start": "node server.js",
-    "start:no-open": "node server.js --no-open"
+    "start:no-open": "node server.js --no-open",
+    "test": "node --test"
   },
   "engines": {
     "node": ">=18"

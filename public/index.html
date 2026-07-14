@@ -6,17 +6,49 @@
     <title>Bobo</title>
     <link rel="stylesheet" href="/styles.css">
   </head>
-  <body>
-    <div class="app-shell">
+  <body class="auth-pending">
+    <section id="authScreen" class="auth-screen" aria-live="polite">
+      <div class="auth-brand">
+        <span class="auth-brand-mark">B</span>
+        <div><strong>Bobo</strong><span>轻量甘特项目管理</span></div>
+      </div>
+      <form id="authForm" class="auth-form">
+        <div>
+          <p id="authEyebrow" class="auth-eyebrow">局域网工作区</p>
+          <h1 id="authTitle">登录 Bobo</h1>
+          <p id="authDescription">使用团队账户继续。</p>
+        </div>
+        <label id="displayNameField" class="field" hidden>显示名<input id="authDisplayName" autocomplete="name"></label>
+        <label class="field">用户名<input id="authUsername" autocomplete="username" required></label>
+        <label class="field">密码<input id="authPassword" type="password" autocomplete="current-password" minlength="6" required></label>
+        <p id="authError" class="form-error" role="alert" hidden></p>
+        <button id="authSubmit" type="submit">登录</button>
+      </form>
+    </section>
+
+    <div id="appShell" class="app-shell" hidden>
       <header class="topbar">
         <div>
           <h1>Bobo</h1>
           <p>轻量甘特项目管理</p>
         </div>
         <div class="toolbar">
+          <div id="syncNotice" class="sync-notice" hidden>有其他用户更新了数据</div>
           <div id="systemPicker" class="system-picker"></div>
           <button id="saveBtn" type="button">保存</button>
-          <button id="shutdownBtn" class="danger-button" type="button">&#20851;&#38381;</button>
+          <div class="account-menu-wrap">
+            <button id="accountBtn" class="account-trigger" type="button" aria-haspopup="menu" aria-expanded="false">
+              <span id="accountInitial" class="account-initial">U</span>
+              <span id="accountName">用户</span>
+              <span aria-hidden="true">▾</span>
+            </button>
+            <div id="accountMenu" class="account-menu" role="menu" hidden>
+              <button id="manageUsersBtn" type="button" role="menuitem">账户管理</button>
+              <button id="changePasswordBtn" type="button" role="menuitem">修改密码</button>
+              <button id="logoutBtn" type="button" role="menuitem">退出登录</button>
+            </div>
+          </div>
+          <button id="shutdownBtn" class="danger-button" type="button">关闭</button>
         </div>
       </header>
 
@@ -31,14 +63,8 @@
           </section>
           <section>
             <h2>视图</h2>
-            <label class="field">
-              起始日期
-              <input id="viewStart" type="date">
-            </label>
-            <label class="field">
-              结束日期
-              <input id="viewEnd" type="date">
-            </label>
+            <label class="field">起始日期<input id="viewStart" type="date"></label>
+            <label class="field">结束日期<input id="viewEnd" type="date"></label>
             <button id="fitDatesBtn" type="button">适配任务范围</button>
           </section>
           <section>
@@ -51,10 +77,7 @@
         </aside>
 
         <div id="sideResizeHandle" class="side-resize-handle" role="separator" aria-label="调整左侧栏宽度" tabindex="0"></div>
-
-        <section class="gantt-panel" aria-label="甘特图">
-          <div id="gantt" class="gantt"></div>
-        </section>
+        <section class="gantt-panel" aria-label="甘特图"><div id="gantt" class="gantt"></div></section>
       </main>
     </div>
 
@@ -66,38 +89,94 @@
           <h2 id="editorTitle">编辑阶段</h2>
           <div class="editor-head-actions">
             <button id="deleteEditorBtn" class="danger editor-delete" value="delete" type="button">删除</button>
-            <button class="icon-button" value="cancel" aria-label="关闭" type="submit">x</button>
+            <button class="icon-button" value="cancel" aria-label="关闭" type="submit">×</button>
           </div>
         </div>
-        <div class="editor-grid">
-          <label id="editTitleField" class="field full"><span id="editTitleLabel">标题</span><input id="editTitle" required></label>
-          <label class="field" data-stage-field>阶段<select id="editType"></select></label>
-          <label class="field" data-stage-field>开始<input id="editStart" type="date" required></label>
-          <label class="field" data-stage-field>结束<input id="editEnd" type="date" required></label>
-          <label class="field" data-stage-field>负责人<input id="editOwner"></label>
-          <label class="field" data-stage-field>工时<input id="editHours" type="number" min="0" step="0.5"></label>
-          <label class="field" data-stage-field>
-            状态
-            <select id="editStatus">
-              <option>未开始</option>
-              <option>进行中</option>
-              <option>已完成</option>
-              <option>超期未完成</option>
-              <option>暂停</option>
-            </select>
-          </label>
-          <label class="check-field" data-stage-field><input id="editIssueOpen" type="checkbox">当前有未关闭问题</label>
-          <label class="field full" data-stage-field>当前问题<textarea id="editIssues" rows="3"></textarea></label>
-          <label class="field full" data-stage-field>备注<textarea id="editNotes" rows="3"></textarea></label>
+        <div id="editorTabs" class="editor-tabs" hidden>
+          <button class="editor-tab active" data-editor-tab="details" type="button">阶段详情</button>
+          <button class="editor-tab" data-editor-tab="issues" type="button">待处理问题 <span id="issueCount">0</span></button>
         </div>
+        <section id="editorDetailsPanel" class="editor-panel">
+          <div class="editor-grid">
+            <label id="editTitleField" class="field full"><span id="editTitleLabel">标题</span><input id="editTitle" required></label>
+            <label class="field" data-stage-field>阶段<select id="editType"></select></label>
+            <label class="field" data-stage-field>开始<input id="editStart" type="date" required></label>
+            <label class="field" data-stage-field>结束<input id="editEnd" type="date" required></label>
+            <label class="field" data-stage-field>负责人<input id="editOwner"></label>
+            <label class="field" data-stage-field>工时<input id="editHours" type="number" min="0" step="0.5"></label>
+            <label class="field" data-stage-field>状态
+              <select id="editStatus">
+                <option>未开始</option><option>进行中</option><option>已完成</option><option>超期未完成</option><option>暂停</option>
+              </select>
+            </label>
+            <label class="check-field legacy-issue-field" data-stage-field hidden><input id="editIssueOpen" type="checkbox">当前有未关闭问题</label>
+            <label class="field full legacy-issue-field" data-stage-field hidden>当前问题<textarea id="editIssues" rows="3"></textarea></label>
+            <label class="field full" data-stage-field>备注<textarea id="editNotes" rows="3"></textarea></label>
+          </div>
+        </section>
+        <section id="editorIssuesPanel" class="editor-panel issue-panel" hidden>
+          <div class="issue-toolbar">
+            <div><strong>问题与子任务</strong><span>按阶段跟踪负责人和处理结果</span></div>
+            <button id="addIssueBtn" type="button">+ 新建问题</button>
+          </div>
+          <div class="issue-workspace">
+            <div id="issueList" class="issue-list" aria-label="问题列表"></div>
+            <div id="issueForm" class="issue-detail" hidden>
+              <div class="issue-detail-head">
+                <span id="issueStateBadge" class="issue-state-badge">待处理</span>
+                <button id="deleteIssueBtn" class="danger-text" type="button">删除问题</button>
+              </div>
+              <input id="issueId" type="hidden">
+              <input id="issueVersion" type="hidden">
+              <label class="field">标题<input id="issueTitle" required maxlength="120"></label>
+              <label class="field">描述<textarea id="issueDescription" rows="5"></textarea></label>
+              <div class="issue-fields">
+                <label class="field">状态
+                  <select id="issueStatus"><option value="open">待处理</option><option value="in_progress">处理中</option></select>
+                </label>
+                <label class="field">负责人<select id="issueAssignee"></select></label>
+              </div>
+              <div id="issueAudit" class="issue-audit"></div>
+              <div class="issue-actions">
+                <button id="issueCloseBtn" class="secondary" type="button">关闭问题</button>
+                <button id="saveIssueBtn" type="button">保存问题</button>
+              </div>
+            </div>
+            <div id="issueEmpty" class="issue-empty">选择一个问题，或新建待处理项。</div>
+          </div>
+        </section>
         <menu class="editor-actions">
           <span></span>
           <button value="cancel" type="submit">取消</button>
-          <button id="saveEditorBtn" value="default" type="button">保存</button>
+          <button id="saveEditorBtn" value="default" type="button">保存阶段</button>
         </menu>
       </form>
     </dialog>
 
+    <dialog id="usersDialog" class="users-dialog">
+      <div>
+        <div class="editor-head">
+          <div><p class="dialog-eyebrow">管理员</p><h2>账户管理</h2></div>
+          <button id="closeUsersDialogBtn" class="icon-button" type="button" aria-label="关闭">×</button>
+        </div>
+        <div class="users-layout">
+          <div id="usersList" class="users-list"></div>
+          <form id="userForm" class="user-form">
+            <h3 id="userFormTitle">新增账户</h3>
+            <input id="managedUserId" type="hidden">
+            <label class="field">用户名<input id="managedUsername" required></label>
+            <label class="field">显示名<input id="managedDisplayName" required></label>
+            <label class="field">角色<select id="managedRole"><option value="member">成员</option><option value="admin">管理员</option></select></label>
+            <label class="field">密码<input id="managedPassword" type="password" minlength="6" placeholder="编辑时留空表示不修改"></label>
+            <label id="managedActiveField" class="check-field"><input id="managedActive" type="checkbox" checked>账户启用</label>
+            <p id="userFormError" class="form-error" hidden></p>
+            <div class="user-form-actions"><button id="newUserBtn" type="button" class="secondary">清空</button><button type="submit">保存账户</button></div>
+          </form>
+        </div>
+      </div>
+    </dialog>
+
+    <script src="/collab.js"></script>
     <script src="/app.js"></script>
   </body>
 </html>

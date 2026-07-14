@@ -1,2 +1,8 @@
 # External file synchronization conflict copies
 *.sync-conflict-*
+# Runtime credentials, migrations, and isolated test data
+data/users.json
+data/backups/
+data/projects.json.migrated
+.tmp-multiuser-smoke/
+test/.tmp-*/
