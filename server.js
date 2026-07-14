@@ -71,12 +71,22 @@ function assertAdmin(user) {
   }
 }
 
+function notFound(message) {
+  const error = new Error(message);
+  error.code = "NOT_FOUND";
+  return error;
+}
+
 function statusForError(error) {
   if (error.code === "AUTH_FAILED") return 401;
   if (error.code === "FORBIDDEN") return 403;
   if (error.code === "NOT_FOUND") return 404;
   if (error.code === "ALREADY_SETUP" || error.code === "REVISION_CONFLICT" || error.code === "VERSION_CONFLICT") return 409;
   return 400;
+}
+
+function resourcePayload(payload) {
+  return { ...payload, state: store.composeState() };
 }
 
 function publicBootstrap(user) {
@@ -186,6 +196,136 @@ async function routeApi(req, res, url) {
     return true;
   }
 
+  if (url.pathname === "/api/systems" && req.method === "GET") {
+    sendJson(res, 200, store.listSystems());
+    return true;
+  }
+
+  if (url.pathname === "/api/systems" && req.method === "POST") {
+    sendJson(res, 201, resourcePayload(store.createSystem(await readBody(req))));
+    return true;
+  }
+
+  const systemMatch = url.pathname.match(/^\/api\/systems\/([^/]+)$/);
+  if (systemMatch) {
+    const systemId = decodeURIComponent(systemMatch[1]);
+    const state = store.composeState();
+    const system = state.systems.find((item) => item.id === systemId);
+    if (!system) throw notFound("系统不存在");
+    if (req.method === "GET") {
+      sendJson(res, 200, { system, revision: store.getMeta().revision, state });
+      return true;
+    }
+    if (req.method === "PATCH") {
+      const input = await readBody(req);
+      sendJson(res, 200, resourcePayload(store.updateSystem(systemId, input, input.version)));
+      return true;
+    }
+    if (req.method === "DELETE") {
+      assertAdmin(user);
+      const input = await readBody(req);
+      sendJson(res, 200, resourcePayload(store.deleteSystem(systemId, input.version)));
+      return true;
+    }
+  }
+
+  const systemProjectsMatch = url.pathname.match(/^\/api\/systems\/([^/]+)\/projects$/);
+  if (systemProjectsMatch) {
+    const systemId = decodeURIComponent(systemProjectsMatch[1]);
+    const state = store.composeState();
+    const system = state.systems.find((item) => item.id === systemId);
+    if (!system) throw notFound("系统不存在");
+    if (req.method === "GET") {
+      sendJson(res, 200, { projects: system.projects, revision: store.getMeta().revision, state });
+      return true;
+    }
+    if (req.method === "POST") {
+      const input = await readBody(req);
+      sendJson(res, 201, resourcePayload(store.createProject(systemId, input, input.systemVersion)));
+      return true;
+    }
+  }
+
+  const projectMatch = url.pathname.match(/^\/api\/projects\/([^/]+)$/);
+  if (projectMatch) {
+    const projectId = decodeURIComponent(projectMatch[1]);
+    const state = store.composeState();
+    const project = state.systems.flatMap((item) => item.projects || []).find((item) => item.id === projectId);
+    if (!project) throw notFound("项目不存在");
+    if (req.method === "GET") {
+      sendJson(res, 200, { project, revision: store.getMeta().revision, state });
+      return true;
+    }
+    if (req.method === "PATCH") {
+      const input = await readBody(req);
+      input.actorUserId = user.id;
+      sendJson(res, 200, resourcePayload(store.updateProject(projectId, input, input.version)));
+      return true;
+    }
+    if (req.method === "DELETE") {
+      assertAdmin(user);
+      const input = await readBody(req);
+      sendJson(res, 200, resourcePayload(store.deleteProject(projectId, input.systemVersion, input.version)));
+      return true;
+    }
+  }
+
+  const requirementCollectionMatch = url.pathname.match(/^\/api\/projects\/([^/]+)\/requirements$/);
+  if (requirementCollectionMatch && req.method === "POST") {
+    const projectId = decodeURIComponent(requirementCollectionMatch[1]);
+    const input = await readBody(req);
+    input.actorUserId = user.id;
+    sendJson(res, 201, resourcePayload(store.createRequirement(projectId, input)));
+    return true;
+  }
+
+  const requirementMatch = url.pathname.match(/^\/api\/projects\/([^/]+)\/requirements\/([^/]+)$/);
+  if (requirementMatch) {
+    const projectId = decodeURIComponent(requirementMatch[1]);
+    const requirementId = decodeURIComponent(requirementMatch[2]);
+    if (req.method === "PATCH") {
+      const input = await readBody(req);
+      input.actorUserId = user.id;
+      sendJson(res, 200, resourcePayload(store.updateRequirement(projectId, requirementId, input)));
+      return true;
+    }
+    if (req.method === "DELETE") {
+      assertAdmin(user);
+      const input = await readBody(req);
+      sendJson(res, 200, resourcePayload(store.deleteRequirement(projectId, requirementId, input.projectVersion, input.version)));
+      return true;
+    }
+  }
+
+  const stageCollectionMatch = url.pathname.match(/^\/api\/projects\/([^/]+)\/requirements\/([^/]+)\/stages$/);
+  if (stageCollectionMatch && req.method === "POST") {
+    const projectId = decodeURIComponent(stageCollectionMatch[1]);
+    const requirementId = decodeURIComponent(stageCollectionMatch[2]);
+    const input = await readBody(req);
+    input.actorUserId = user.id;
+    sendJson(res, 201, resourcePayload(store.createStage(projectId, requirementId, input)));
+    return true;
+  }
+
+  const stageMatch = url.pathname.match(/^\/api\/projects\/([^/]+)\/requirements\/([^/]+)\/stages\/([^/]+)$/);
+  if (stageMatch) {
+    const projectId = decodeURIComponent(stageMatch[1]);
+    const requirementId = decodeURIComponent(stageMatch[2]);
+    const stageId = decodeURIComponent(stageMatch[3]);
+    if (req.method === "PATCH") {
+      const input = await readBody(req);
+      input.actorUserId = user.id;
+      sendJson(res, 200, resourcePayload(store.updateStage(projectId, requirementId, stageId, input)));
+      return true;
+    }
+    if (req.method === "DELETE") {
+      assertAdmin(user);
+      const input = await readBody(req);
+      sendJson(res, 200, resourcePayload(store.deleteStage(projectId, requirementId, stageId, input.requirementVersion, input.version)));
+      return true;
+    }
+  }
+
   if (url.pathname === "/api/users" && req.method === "GET") {
     sendJson(res, 200, { users: auth.listUsers() });
     return true;
@@ -211,7 +351,7 @@ async function routeApi(req, res, url) {
     const projectId = decodeURIComponent(issueMatch[1]);
     const issueId = issueMatch[2] ? decodeURIComponent(issueMatch[2]) : "";
     const action = issueMatch[3] || "";
-    const input = ["POST", "PATCH"].includes(req.method) ? await readBody(req) : {};
+    const input = ["POST", "PATCH", "DELETE"].includes(req.method) ? await readBody(req) : {};
 
     if (!issueId && req.method === "POST") {
       auth.assertAssignee(input.assigneeUserId);
@@ -229,9 +369,18 @@ async function routeApi(req, res, url) {
     }
     if (issueId && !action && req.method === "DELETE") {
       assertAdmin(user);
-      sendJson(res, 200, { ok: true, revision: store.deleteIssue(projectId, issueId).revision });
+      sendJson(res, 200, { ok: true, revision: store.deleteIssue(projectId, issueId, input.version).revision });
       return true;
     }
+  }
+
+  const commentMatch = url.pathname.match(/^\/api\/projects\/([^/]+)\/issues\/([^/]+)\/comments$/);
+  if (commentMatch && req.method === "POST") {
+    const projectId = decodeURIComponent(commentMatch[1]);
+    const issueId = decodeURIComponent(commentMatch[2]);
+    const input = await readBody(req);
+    sendJson(res, 201, store.addIssueComment(projectId, issueId, input.body, user.id, input.version));
+    return true;
   }
 
   if (url.pathname === "/api/shutdown" && req.method === "POST") {
@@ -289,13 +438,15 @@ const server = http.createServer((req, res) => {
     console.error(error);
     sendJson(res, statusForError(error), {
       error: error.message,
-      revision: error.revision,
-      entity: error.entity
+      code: error.code,
+      revision: error.revision || store.getMeta().revision,
+      entity: error.entity,
+      versionField: error.versionField
     });
   });
 });
 
-server.on("error", (error) => {
+  server.on("error", (error) => {
   if (error.code === "EADDRINUSE") {
     const localUrl = `http://localhost:${port}`;
     console.log(`Bobo is already running on port ${port}.`);

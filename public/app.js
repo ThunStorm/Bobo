@@ -157,6 +157,7 @@ function normalizeMarker(marker) {
 function normalizeProject(project) {
   project.id ||= uid("project");
   project.name ||= "未命名项目";
+  project.version = Number(project.version || 1);
   project.expanded ??= true;
   project.milestones ||= [];
   project.dateMarkers ||= [];
@@ -165,10 +166,12 @@ function normalizeProject(project) {
   for (const requirement of project.requirements) {
     requirement.id ||= uid("req");
     requirement.title ||= "未命名需求";
+    requirement.version = Number(requirement.version || 1);
     requirement.expanded ??= true;
     requirement.stages ||= [];
     for (const stage of requirement.stages) {
       stage.id ||= uid("stage");
+      stage.version = Number(stage.version || 1);
       stage.type ||= STAGE_TYPES[0];
       stage.title ||= stage.type;
       stage.start ||= formatDate(new Date());
@@ -197,11 +200,13 @@ function normalizeState() {
   for (const [index, system] of state.systems.entries()) {
     system.id ||= uid("system");
     system.name ||= `系统${String.fromCharCode(65 + index)}`;
+    system.version = Number(system.version || 1);
     system.projects ||= [];
     system.dateMarkers ||= [];
     for (const marker of system.dateMarkers) normalizeMarker(marker);
     for (const project of system.projects) normalizeProject(project);
   }
+  state.systemsVersion = Number(state.systemsVersion || 1);
 
   if (!state.systems.some((system) => system.id === state.selectedSystemId)) {
     state.selectedSystemId = state.systems[0].id;
@@ -300,6 +305,89 @@ async function commitState({ rerender = true, refit = false } = {}) {
     if (rerender) render();
     return true;
   } catch (error) {
+    alert(error.message);
+    return false;
+  }
+}
+
+async function commitResource(url, body, { refit = false, rerender = true, allowRetry = true } = {}) {
+  try {
+    normalizeState();
+    if (refit) fitDates();
+    const payload = await BoboCollab.saveResource(state, url, { method: "POST", body });
+    flashSaveStatus();
+    if (rerender) render();
+    return payload;
+  } catch (error) {
+    if (allowRetry && error.payload?.code === "VERSION_CONFLICT") {
+      const choice = await BoboCollab.resolveConflict(error, body);
+      if (choice === "server") {
+        await loadState();
+        reopenEditingFromState();
+        return null;
+      }
+      if (choice === "retry") {
+        const retryBody = { ...body };
+        const versionKey = error.payload.versionField || "version";
+        if (versionKey && error.payload.entity?.version != null) retryBody[versionKey] = error.payload.entity.version;
+        return commitResource(url, retryBody, { refit, rerender, allowRetry: false });
+      }
+    }
+    alert(error.message);
+    return false;
+  }
+}
+
+async function patchResource(url, body, options = {}) {
+  try {
+    normalizeState();
+    if (options.refit) fitDates();
+    const payload = await BoboCollab.saveResource(state, url, { method: "PATCH", body });
+    flashSaveStatus();
+    if (options.rerender !== false) render();
+    return payload;
+  } catch (error) {
+    if (options.allowRetry !== false && error.payload?.code === "VERSION_CONFLICT") {
+      const choice = await BoboCollab.resolveConflict(error, body);
+      if (choice === "server") {
+        await loadState();
+        reopenEditingFromState();
+        return null;
+      }
+      if (choice === "retry") {
+        const retryBody = { ...body };
+        const versionKey = error.payload.versionField || "version";
+        if (versionKey && error.payload.entity?.version != null) retryBody[versionKey] = error.payload.entity.version;
+        return patchResource(url, retryBody, { ...options, allowRetry: false });
+      }
+    }
+    alert(error.message);
+    return false;
+  }
+}
+
+async function deleteResource(url, body, options = {}) {
+  try {
+    const payload = await BoboCollab.saveResource(state, url, { method: "DELETE", body });
+    flashSaveStatus();
+    if (options.refit) fitDates();
+    if (options.rerender !== false) render();
+    return payload;
+  } catch (error) {
+    if (options.allowRetry !== false && error.payload?.code === "VERSION_CONFLICT") {
+      const choice = await BoboCollab.resolveConflict(error, body);
+      if (choice === "server") {
+        await loadState();
+        reopenEditingFromState();
+        return null;
+      }
+      if (choice === "retry") {
+        const retryBody = { ...body };
+        const versionKey = error.payload.versionField || "version";
+        if (versionKey && error.payload.entity?.version != null) retryBody[versionKey] = error.payload.entity.version;
+        return deleteResource(url, retryBody, { ...options, allowRetry: false });
+      }
+    }
     alert(error.message);
     return false;
   }
@@ -495,31 +583,29 @@ async function selectSystem(systemId) {
   systemMenuOpen = false;
   openSystemActionsId = "";
   fitDates();
-  await commitState();
+  BoboCollab.savePreferences(state, view);
+  render();
 }
 
 async function addSystem() {
-  const system = {
-    id: uid("system"),
-    name: nextSystemName(),
-    projects: [],
-    dateMarkers: []
-  };
-  state.systems.push(system);
-  state.selectedSystemId = system.id;
-  state.selectedProjectId = "";
+  const systemName = nextSystemName();
   systemMenuOpen = false;
   openSystemActionsId = "";
-  await commitState({ refit: true });
+  const payload = await commitResource("/api/systems", { name: systemName, systemsVersion: state.systemsVersion }, { refit: true });
+  if (payload?.state && payload.system) {
+    state.selectedSystemId = payload.system.id;
+    state.selectedProjectId = "";
+    BoboCollab.savePreferences(state, view);
+    render();
+  }
 }
 
 async function renameSystem(system) {
   const name = prompt("系统名称", system.name);
   if (!name || !name.trim()) return;
-  system.name = name.trim();
   systemMenuOpen = false;
   openSystemActionsId = "";
-  await commitState();
+  await patchResource(`/api/systems/${encodeURIComponent(system.id)}`, { name: name.trim(), version: system.version });
 }
 
 async function deleteSystem(system) {
@@ -533,11 +619,15 @@ async function deleteSystem(system) {
   }
   const confirmed = confirm(`确定删除「${system.name}」吗？`);
   if (!confirmed) return;
-  state.systems = state.systems.filter((item) => item.id !== system.id);
-  if (state.selectedSystemId === system.id) state.selectedSystemId = state.systems[0].id;
   systemMenuOpen = false;
   openSystemActionsId = "";
-  await commitState({ refit: true });
+  const payload = await deleteResource(`/api/systems/${encodeURIComponent(system.id)}`, { version: system.version }, { refit: true });
+  if (payload?.state && state.selectedSystemId === system.id) {
+    state.selectedSystemId = state.systems[0]?.id || "";
+    ensureSelectedProject();
+    BoboCollab.savePreferences(state, view);
+    render();
+  }
 }
 
 function renderHeader(days, markers) {
@@ -652,7 +742,8 @@ function renderProjectRow(project) {
   label.prepend(toggleButton(project.expanded, async () => {
     project.expanded = !project.expanded;
     state.selectedProjectId = project.id;
-    await commitState();
+    BoboCollab.savePreferences(state, view);
+    render();
   }));
   label.append(
     iconButton("编辑项目", "✎", (event) => {
@@ -690,7 +781,8 @@ function renderRequirementRow(project, requirement) {
   label.prepend(toggleButton(requirement.expanded, async () => {
     requirement.expanded = !requirement.expanded;
     state.selectedProjectId = project.id;
-    await commitState();
+    BoboCollab.savePreferences(state, view);
+    render();
   }));
   label.append(
     title,
@@ -799,18 +891,34 @@ function renderStageRow(project, requirement, stage) {
 async function saveInlineStageName(stage, input) {
   const value = input.value.trim();
   if (!value) return;
-  stage.type = value;
-  if (!stage.title || STAGE_TYPES.includes(stage.title)) stage.title = value;
-  editingStageNameId = "";
-  await commitState();
+  const project = getActiveProjects().find((item) => item.requirements.some((requirement) => requirement.stages.includes(stage)));
+  const requirement = project?.requirements.find((item) => item.stages.includes(stage));
+  if (!project || !requirement) return;
+  const title = !stage.title || STAGE_TYPES.includes(stage.title) ? value : stage.title;
+  const payload = await patchResource(`/api/projects/${encodeURIComponent(project.id)}/requirements/${encodeURIComponent(requirement.id)}/stages/${encodeURIComponent(stage.id)}`, {
+    type: value,
+    title,
+    version: stage.version
+  });
+  if (payload) {
+    editingStageNameId = "";
+    render();
+  }
 }
 
 async function saveInlineRequirementName(requirement, input) {
   const value = input.value.trim();
   if (!value) return;
-  requirement.title = value;
-  editingRequirementNameId = "";
-  await commitState();
+  const project = getActiveProjects().find((item) => item.requirements.includes(requirement));
+  if (!project) return;
+  const payload = await patchResource(`/api/projects/${encodeURIComponent(project.id)}/requirements/${encodeURIComponent(requirement.id)}`, {
+    title: value,
+    version: requirement.version
+  });
+  if (payload) {
+    editingRequirementNameId = "";
+    render();
+  }
 }
 
 function clearStageDropIndicators() {
@@ -848,18 +956,22 @@ async function handleStageDrop(event, requirement, stage, row) {
 }
 
 async function moveStage(requirement, sourceStage, targetStage, placement = "before") {
-  const stages = requirement.stages;
+  const stages = [...requirement.stages];
   const from = stages.findIndex((stage) => stage.id === sourceStage.id);
   if (from < 0 || sourceStage.id === targetStage.id) return;
   const [item] = stages.splice(from, 1);
   let to = stages.findIndex((stage) => stage.id === targetStage.id);
   if (to < 0) {
-    stages.splice(from, 0, item);
     return;
   }
   if (placement === "after") to += 1;
   stages.splice(to, 0, item);
-  await commitState();
+  const project = getActiveProjects().find((item) => item.requirements.includes(requirement));
+  if (!project) return;
+  await patchResource(`/api/projects/${encodeURIComponent(project.id)}/requirements/${encodeURIComponent(requirement.id)}`, {
+    stageIds: stages.map((item) => item.id),
+    version: requirement.version
+  });
 }
 
 function renderProjectList() {
@@ -944,7 +1056,9 @@ async function selectProject(project) {
   state.selectedProjectId = project.id;
   project.expanded = true;
   shouldScrollSelection = true;
-  await commitState({ refit: true });
+  fitDates();
+  BoboCollab.savePreferences(state, view);
+  render();
 }
 
 function getStageVisualState(stage, today = formatDate(new Date())) {
@@ -1054,6 +1168,27 @@ function openStageEditor(project, requirement, stage) {
   els.editTitle.focus();
 }
 
+function reopenEditingFromState() {
+  if (!editing) return;
+  const previous = {
+    kind: editing.kind,
+    projectId: editing.project?.id,
+    requirementId: editing.requirement?.id,
+    stageId: editing.stage?.id
+  };
+  const project = state.systems.flatMap((system) => system.projects || [])
+    .find((item) => item.id === previous.projectId);
+  const requirement = project?.requirements.find((item) => item.id === previous.requirementId);
+  const stage = requirement?.stages.find((item) => item.id === previous.stageId);
+
+  if (els.dialog.open) els.dialog.close();
+  editing = null;
+  if (!project) return;
+  if (previous.kind === "project") openProjectEditor(project);
+  else if (previous.kind === "requirement" && requirement) openRequirementEditor(project, requirement);
+  else if (previous.kind === "stage" && requirement && stage) openStageEditor(project, requirement, stage);
+}
+
 async function saveEditor() {
   if (!editing) return;
   const value = els.editTitle.value.trim();
@@ -1062,29 +1197,43 @@ async function saveEditor() {
     return;
   }
 
+  let payload = null;
   if (editing.kind === "project") {
-    editing.project.name = value;
+    payload = await patchResource(`/api/projects/${encodeURIComponent(editing.project.id)}`, {
+      name: value,
+      version: editing.project.version
+    }, { refit: true, rerender: false });
     state.selectedProjectId = editing.project.id;
   } else if (editing.kind === "requirement") {
-    editing.requirement.title = value;
+    payload = await patchResource(`/api/projects/${encodeURIComponent(editing.project.id)}/requirements/${encodeURIComponent(editing.requirement.id)}`, {
+      title: value,
+      version: editing.requirement.version
+    }, { refit: true, rerender: false });
     state.selectedProjectId = editing.project.id;
   } else if (editing.kind === "stage") {
     const stage = editing.stage;
     const nextType = els.editType.value;
-    stage.title = value || nextType;
-    stage.type = nextType;
-    stage.start = els.editStart.value;
-    stage.end = els.editEnd.value;
-    stage.owner = els.editOwner.value.trim();
-    stage.hours = Number(els.editHours.value || 0);
-    stage.status = els.editStatus.value;
-    stage.notes = els.editNotes.value.trim();
-    clampStageDates(stage);
+    const start = els.editStart.value;
+    const end = els.editEnd.value < start ? start : els.editEnd.value;
+    payload = await patchResource(`/api/projects/${encodeURIComponent(editing.project.id)}/requirements/${encodeURIComponent(editing.requirement.id)}/stages/${encodeURIComponent(stage.id)}`, {
+      title: value || nextType,
+      type: nextType,
+      start,
+      end,
+      owner: els.editOwner.value.trim(),
+      hours: Number(els.editHours.value || 0),
+      status: els.editStatus.value,
+      notes: els.editNotes.value.trim(),
+      version: stage.version
+    }, { refit: true, rerender: false });
+    state.selectedProjectId = editing.project.id;
   }
+
+  if (!payload) return;
 
   editing = null;
   els.dialog.close();
-  await commitState({ refit: true });
+  render();
 }
 
 function renderStageTypeOptions(currentStage) {
@@ -1120,64 +1269,76 @@ async function deleteEditor() {
 
   if (editing.kind === "project") {
     const project = editing.project;
-    const projects = getActiveProjects();
-    const index = projects.findIndex((item) => item.id === project.id);
-    if (index < 0) return;
     const markerCount = (project.milestones || []).length + (project.dateMarkers || []).length;
     const confirmed = confirm(`确定删除项目「${project.name}」及其 ${project.requirements.length} 个需求、全部阶段和 ${markerCount} 个标记吗？`);
     if (!confirmed) return;
-    projects.splice(index, 1);
-    const replacement = projects[index] || projects[index - 1] || null;
-    state.selectedProjectId = replacement?.id || "";
+    const system = getActiveSystem();
+    const payload = await deleteResource(`/api/projects/${encodeURIComponent(project.id)}`, {
+      systemVersion: system.version,
+      version: project.version
+    }, { refit: true, rerender: false });
+    if (!payload) return;
+    state.selectedProjectId = getActiveProjects()[0]?.id || "";
   } else if (editing.kind === "requirement") {
     const { project, requirement } = editing;
     const confirmed = confirm(`确定删除需求「${requirement.title}」及其全部阶段吗？`);
     if (!confirmed) return;
-    const index = project.requirements.findIndex((item) => item.id === requirement.id);
-    if (index >= 0) project.requirements.splice(index, 1);
+    const payload = await deleteResource(`/api/projects/${encodeURIComponent(project.id)}/requirements/${encodeURIComponent(requirement.id)}`, {
+      projectVersion: project.version,
+      version: requirement.version
+    }, { refit: true, rerender: false });
+    if (!payload) return;
     state.selectedProjectId = project.id;
   } else if (editing.kind === "stage") {
     const { requirement, stage } = editing;
     const confirmed = confirm(`确定删除阶段「${stage.title || stage.type}」吗？`);
     if (!confirmed) return;
-    const index = requirement.stages.findIndex((item) => item.id === stage.id);
-    if (index >= 0) requirement.stages.splice(index, 1);
+    const payload = await deleteResource(`/api/projects/${encodeURIComponent(editing.project.id)}/requirements/${encodeURIComponent(requirement.id)}/stages/${encodeURIComponent(stage.id)}`, {
+      requirementVersion: requirement.version,
+      version: stage.version
+    }, { refit: true, rerender: false });
+    if (!payload) return;
   }
 
   editing = null;
   els.dialog.close();
-  await commitState({ refit: true });
+  BoboCollab.savePreferences(state, view);
+  render();
 }
 async function addProject() {
   const name = prompt("项目名称");
   if (!name || !name.trim()) return;
-  const project = { id: uid("project"), name: name.trim(), expanded: true, milestones: [], dateMarkers: [], requirements: [] };
-  getActiveProjects().push(project);
-  state.selectedProjectId = project.id;
-  await commitState({ refit: true });
+  const system = getActiveSystem();
+  const payload = await commitResource(`/api/systems/${encodeURIComponent(system.id)}/projects`, {
+    name: name.trim(),
+    systemVersion: system.version
+  }, { refit: true });
+  if (payload?.project) {
+    state.selectedProjectId = payload.project.id;
+    BoboCollab.savePreferences(state, view);
+    render();
+  }
 }
 
 async function saveInlineProjectName(project, input) {
   const value = input.value.trim();
   if (!value) return;
-  project.name = value;
-  editingProjectNameId = "";
-  state.selectedProjectId = project.id;
-  await commitState();
+  const payload = await patchResource(`/api/projects/${encodeURIComponent(project.id)}`, { name: value, version: project.version });
+  if (payload) {
+    editingProjectNameId = "";
+    state.selectedProjectId = project.id;
+    render();
+  }
 }
 
 async function addRequirement(project) {
   const title = prompt(`为「${project.name}」添加需求`);
   if (!title || !title.trim()) return;
   const today = formatDate(new Date());
-  project.expanded = true;
-  state.selectedProjectId = project.id;
-  project.requirements.push({
-    id: uid("req"),
+  const payload = await commitResource(`/api/projects/${encodeURIComponent(project.id)}/requirements`, {
     title: title.trim(),
-    expanded: true,
+    projectVersion: project.version,
     stages: STAGE_TYPES.map((type, index) => ({
-      id: uid("stage"),
       type,
       title: type,
       start: addDays(today, index * 2),
@@ -1185,31 +1346,45 @@ async function addRequirement(project) {
       owner: "",
       hours: 0,
       status: "未开始",
-      issueOpen: addDays(today, index * 2) > today,
-      issues: "",
       notes: ""
     }))
-  });
-  await commitState({ refit: true });
+  }, { refit: true });
+  if (payload?.project) {
+    state.selectedProjectId = project.id;
+    BoboCollab.savePreferences(state, view);
+    render();
+  }
 }
 
 async function deleteRequirement(project, requirement) {
   const confirmed = confirm(`确定删除需求「${requirement.title}」及其全部阶段吗？`);
   if (!confirmed) return;
-  const index = project.requirements.findIndex((item) => item.id === requirement.id);
-  if (index >= 0) project.requirements.splice(index, 1);
-  state.selectedProjectId = project.id;
-  await commitState({ refit: true });
+  const payload = await deleteResource(`/api/projects/${encodeURIComponent(project.id)}/requirements/${encodeURIComponent(requirement.id)}`, {
+    projectVersion: project.version,
+    version: requirement.version
+  }, { refit: true });
+  if (payload) {
+    state.selectedProjectId = project.id;
+    BoboCollab.savePreferences(state, view);
+    render();
+  }
 }
 
 async function addStageToRequirement(requirement) {
   const today = formatDate(new Date());
   const stage = createStage("新阶段", STAGE_TYPES[0], today, addDays(today, 2));
-  requirement.expanded = true;
-  requirement.stages.push(stage);
-  await commitState({ refit: true });
   const project = getActiveProjects().find((item) => item.requirements.includes(requirement));
-  openStageEditor(project, requirement, stage);
+  if (!project) return;
+  const payload = await commitResource(`/api/projects/${encodeURIComponent(project.id)}/requirements/${encodeURIComponent(requirement.id)}/stages`, {
+    ...stage,
+    requirementVersion: requirement.version
+  }, { refit: true });
+  if (payload?.stage) {
+    const currentProject = getActiveProjects().find((item) => item.id === project.id);
+    const currentRequirement = currentProject?.requirements.find((item) => item.id === requirement.id);
+    const currentStage = currentRequirement?.stages.find((item) => item.id === payload.stage.id);
+    if (currentProject && currentRequirement && currentStage) openStageEditor(currentProject, currentRequirement, currentStage);
+  }
 }
 
 function createStage(title, type, start, end) {
@@ -1230,12 +1405,17 @@ function createStage(title, type, start, end) {
 
 async function createStageFromGrid(project, requirement, start) {
   const stage = createStage("新任务", STAGE_TYPES[0], start, twoWorkdayEnd(start));
-  requirement.stages.push(stage);
-  project.expanded = true;
-  requirement.expanded = true;
-  state.selectedProjectId = project.id;
-  await commitState({ refit: true });
-  openStageEditor(project, requirement, stage);
+  const payload = await commitResource(`/api/projects/${encodeURIComponent(project.id)}/requirements/${encodeURIComponent(requirement.id)}/stages`, {
+    ...stage,
+    requirementVersion: requirement.version
+  }, { refit: true });
+  if (payload?.stage) {
+    state.selectedProjectId = project.id;
+    const currentProject = getActiveProjects().find((item) => item.id === project.id);
+    const currentRequirement = currentProject?.requirements.find((item) => item.id === requirement.id);
+    const currentStage = currentRequirement?.stages.find((item) => item.id === payload.stage.id);
+    if (currentProject && currentRequirement && currentStage) openStageEditor(currentProject, currentRequirement, currentStage);
+  }
 }
 
 async function addDateMarker() {
@@ -1260,9 +1440,18 @@ async function addDateMarker() {
     notes: notes.trim()
   };
   const owner = isProjectScope ? project : getActiveSystem();
-  owner.dateMarkers ||= [];
-  owner.dateMarkers.push(marker);
-  await commitState({ refit: true });
+  const nextMarkers = [...(owner.dateMarkers || []), marker];
+  const url = isProjectScope
+    ? `/api/projects/${encodeURIComponent(project.id)}`
+    : `/api/systems/${encodeURIComponent(owner.id)}`;
+  const payload = await patchResource(url, {
+    dateMarkers: nextMarkers,
+    version: owner.version
+  }, { refit: true });
+  if (payload) {
+    state.selectedProjectId = isProjectScope ? project.id : state.selectedProjectId;
+    BoboCollab.savePreferences(state, view);
+  }
 }
 
 function resolveMarkerColor(input, label) {
@@ -1291,8 +1480,11 @@ function resolveMarkerColor(input, label) {
 async function deleteDateMarker(owner, marker) {
   const confirmed = confirm(`确定删除日期标记「${marker.label}」吗？`);
   if (!confirmed) return;
-  owner.dateMarkers = (owner.dateMarkers || []).filter((item) => item.id !== marker.id);
-  await commitState({ refit: true });
+  const url = owner.projects ? `/api/systems/${encodeURIComponent(owner.id)}` : `/api/projects/${encodeURIComponent(owner.id)}`;
+  await patchResource(url, {
+    dateMarkers: (owner.dateMarkers || []).filter((item) => item.id !== marker.id),
+    version: owner.version
+  }, { refit: true });
 }
 
 async function shutdownServer() {

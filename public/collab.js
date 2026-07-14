@@ -36,13 +36,25 @@
     issueTitle: document.querySelector("#issueTitle"),
     issueDescription: document.querySelector("#issueDescription"),
     issueStatus: document.querySelector("#issueStatus"),
+    issuePriority: document.querySelector("#issuePriority"),
+    issueDueDate: document.querySelector("#issueDueDate"),
+    issueFilterStatus: document.querySelector("#issueFilterStatus"),
+    issueFilterPriority: document.querySelector("#issueFilterPriority"),
+    issueFilterAssignee: document.querySelector("#issueFilterAssignee"),
+    issueFilterOverdue: document.querySelector("#issueFilterOverdue"),
     issueAssignee: document.querySelector("#issueAssignee"),
     issueAudit: document.querySelector("#issueAudit"),
+    issueCommentList: document.querySelector("#issueCommentList"),
+    issueCommentInput: document.querySelector("#issueCommentInput"),
+    addCommentBtn: document.querySelector("#addCommentBtn"),
     issueStateBadge: document.querySelector("#issueStateBadge"),
     issueCloseBtn: document.querySelector("#issueCloseBtn"),
     saveIssueBtn: document.querySelector("#saveIssueBtn"),
     closeUsersDialogBtn: document.querySelector("#closeUsersDialogBtn"),
     usersDialog: document.querySelector("#usersDialog"),
+    conflictDialog: document.querySelector("#conflictDialog"),
+    conflictDraft: document.querySelector("#conflictDraft"),
+    conflictServer: document.querySelector("#conflictServer"),
     usersList: document.querySelector("#usersList"),
     userForm: document.querySelector("#userForm"),
     userFormTitle: document.querySelector("#userFormTitle"),
@@ -214,11 +226,41 @@
       const selectedSystemId = state.selectedSystemId;
       const selectedProjectId = state.selectedProjectId;
       state.systems = payload.state.systems;
+      state.systemsVersion = payload.state.systemsVersion;
       state.selectedSystemId = selectedSystemId;
       state.selectedProjectId = selectedProjectId;
       hydratePreferences(state);
     }
     return payload;
+  }
+
+  async function saveResource(state, url, options = {}) {
+    const payload = await api(url, options);
+    revision = Number(payload.revision || revision);
+    if (payload.state && state) {
+      const selectedSystemId = state.selectedSystemId;
+      const selectedProjectId = state.selectedProjectId;
+      state.systems = payload.state.systems;
+      state.systemsVersion = payload.state.systemsVersion;
+      state.selectedSystemId = selectedSystemId;
+      state.selectedProjectId = selectedProjectId;
+      hydratePreferences(state);
+    }
+    return payload;
+  }
+
+  function formatConflictValue(value) {
+    return JSON.stringify(value || {}, null, 2);
+  }
+
+  function resolveConflict(error, draft) {
+    if (!dom.conflictDialog || !error?.payload?.entity) return Promise.resolve("cancel");
+    dom.conflictDraft.textContent = formatConflictValue(draft);
+    dom.conflictServer.textContent = formatConflictValue(error.payload.entity);
+    dom.conflictDialog.showModal();
+    return new Promise((resolve) => {
+      dom.conflictDialog.addEventListener("close", () => resolve(dom.conflictDialog.returnValue || "cancel"), { once: true });
+    });
   }
 
   function isAdmin() {
@@ -241,6 +283,11 @@
     return new Intl.DateTimeFormat("zh-CN", {
       year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit"
     }).format(new Date(value));
+  }
+
+  function localDateString(date = new Date()) {
+    const pad = (value) => String(value).padStart(2, "0");
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
   }
 
   function stageIssues() {
@@ -269,9 +316,28 @@
     ).join("");
   }
 
+  function renderIssueFilters() {
+    const previousAssignee = dom.issueFilterAssignee.value || "all";
+    dom.issueFilterAssignee.innerHTML = `<option value="all">全部负责人</option>${users.map((user) =>
+      `<option value="${escapeHtml(user.id)}">${escapeHtml(userName(user.id))}</option>`
+    ).join("")}`;
+    dom.issueFilterAssignee.value = users.some((user) => user.id === previousAssignee) ? previousAssignee : "all";
+  }
+
   function renderIssueList(selectedId = dom.issueId.value) {
     updateStageDerived();
-    const issues = stageIssues().sort((a, b) => {
+    const today = localDateString();
+    const statusFilter = dom.issueFilterStatus?.value || "all";
+    const priorityFilter = dom.issueFilterPriority?.value || "all";
+    const assigneeFilter = dom.issueFilterAssignee?.value || "all";
+    const overdueOnly = Boolean(dom.issueFilterOverdue?.checked);
+    const issues = stageIssues().filter((issue) => {
+      if (statusFilter !== "all" && issue.status !== statusFilter) return false;
+      if (priorityFilter !== "all" && issue.priority !== priorityFilter) return false;
+      if (assigneeFilter !== "all" && issue.assigneeUserId !== assigneeFilter) return false;
+      if (overdueOnly && (issue.status === "closed" || !issue.dueDate || issue.dueDate >= today)) return false;
+      return true;
+    }).sort((a, b) => {
       if (a.status === "closed" && b.status !== "closed") return 1;
       if (a.status !== "closed" && b.status === "closed") return -1;
       return String(b.updatedAt).localeCompare(String(a.updatedAt));
@@ -298,6 +364,8 @@
     dom.issueTitle.value = issue.title;
     dom.issueDescription.value = issue.description || "";
     dom.issueStatus.value = issue.status === "in_progress" ? "in_progress" : "open";
+    dom.issuePriority.value = issue.priority || "medium";
+    dom.issueDueDate.value = issue.dueDate || "";
     dom.issueStatus.disabled = issue.status === "closed";
     renderAssignees(issue.assigneeUserId || "");
     dom.issueStateBadge.textContent = statusLabel(issue.status);
@@ -314,7 +382,18 @@
         : `关闭：${userName(issue.closedByUserId, "未知用户")} · ${formatTime(issue.closedAt)}`);
     }
     dom.issueAudit.innerHTML = audit.map((line) => `<span>${escapeHtml(line)}</span>`).join("");
+    renderComments(issue);
     renderIssueList(issue.id);
+  }
+
+  function renderComments(issue) {
+    const comments = issue?.comments || [];
+    dom.issueCommentList.innerHTML = comments.length ? comments.map((comment) => `
+      <article class="issue-comment">
+        <div><strong>${escapeHtml(userName(comment.authorUserId, "历史数据"))}</strong><time>${escapeHtml(formatTime(comment.createdAt))}</time></div>
+        <p>${escapeHtml(comment.body)}</p>
+      </article>
+    `).join("") : '<p class="issue-comments-empty">暂无评论</p>';
   }
 
   function newIssue() {
@@ -325,6 +404,8 @@
     dom.issueTitle.value = `待处理：${stageContext.stage.title}`;
     dom.issueDescription.value = "";
     dom.issueStatus.value = "open";
+    dom.issuePriority.value = "medium";
+    dom.issueDueDate.value = "";
     dom.issueStatus.disabled = false;
     renderAssignees("");
     dom.issueStateBadge.textContent = "新问题";
@@ -333,13 +414,39 @@
     dom.issueCloseBtn.textContent = "关闭问题";
     dom.issueCloseBtn.disabled = true;
     dom.deleteIssueBtn.hidden = true;
+    renderComments({ comments: [] });
     renderIssueList("");
     dom.issueTitle.focus();
     dom.issueTitle.select();
   }
 
-  async function mutateIssue(url, options) {
-    const payload = await api(url, options);
+  async function mutateIssue(url, options, allowRetry = true) {
+    let payload;
+    try {
+      const requestOptions = {
+        ...options,
+        body: options.body && typeof options.body === "object" ? { ...options.body } : options.body
+      };
+      payload = await api(url, requestOptions);
+    } catch (error) {
+      if (allowRetry && error.payload?.code === "VERSION_CONFLICT") {
+        const choice = await resolveConflict(error, options.body);
+        const issue = error.payload.entity;
+        if (choice === "server" && issue) {
+          revision = Number(error.payload.revision || revision);
+          const index = stageContext.project.issues.findIndex((item) => item.id === issue.id);
+          if (index >= 0) stageContext.project.issues[index] = issue;
+          selectIssue(issue.id);
+          onStateChanged?.();
+          return null;
+        }
+        if (choice === "retry" && issue) {
+          const retryOptions = { ...options, body: { ...(options.body || {}), version: issue.version } };
+          return mutateIssue(url, retryOptions, false);
+        }
+      }
+      throw error;
+    }
     revision = Number(payload.revision || revision);
     const issues = stageContext.project.issues ||= [];
     if (payload.issue) {
@@ -361,6 +468,8 @@
         title: dom.issueTitle.value,
         description: dom.issueDescription.value,
         status: dom.issueStatus.value,
+        priority: dom.issuePriority.value,
+        dueDate: dom.issueDueDate.value,
         assigneeUserId: dom.issueAssignee.value,
         version: Number(dom.issueVersion.value || 0)
       };
@@ -396,7 +505,24 @@
     const issue = stageIssues().find((item) => item.id === dom.issueId.value);
     if (!issue || !confirm(`确定删除问题“${issue.title}”吗？此操作无法撤销。`)) return;
     try {
-      const payload = await api(`/api/projects/${encodeURIComponent(stageContext.project.id)}/issues/${encodeURIComponent(issue.id)}`, { method: "DELETE" });
+      const url = `/api/projects/${encodeURIComponent(stageContext.project.id)}/issues/${encodeURIComponent(issue.id)}`;
+      let payload;
+      try {
+        payload = await api(url, { method: "DELETE", body: { version: issue.version } });
+      } catch (error) {
+        if (error.payload?.code !== "VERSION_CONFLICT" || !error.payload.entity) throw error;
+        const choice = await resolveConflict(error, { action: "delete", issue });
+        if (choice === "server") {
+          revision = Number(error.payload.revision || revision);
+          const index = stageContext.project.issues.findIndex((item) => item.id === issue.id);
+          if (index >= 0) stageContext.project.issues[index] = error.payload.entity;
+          selectIssue(issue.id);
+          onStateChanged?.();
+          return;
+        }
+        if (choice !== "retry") return;
+        payload = await api(url, { method: "DELETE", body: { version: error.payload.entity.version } });
+      }
       revision = Number(payload.revision || revision);
       stageContext.project.issues = stageContext.project.issues.filter((item) => item.id !== issue.id);
       dom.issueForm.hidden = true;
@@ -411,6 +537,24 @@
   });
 
   dom.addIssueBtn.addEventListener("click", newIssue);
+
+  dom.addCommentBtn.addEventListener("click", async () => {
+    const issue = stageIssues().find((item) => item.id === dom.issueId.value);
+    const body = dom.issueCommentInput.value.trim();
+    if (!issue || !body) return;
+    try {
+      await mutateIssue(`/api/projects/${encodeURIComponent(stageContext.project.id)}/issues/${encodeURIComponent(issue.id)}/comments`, {
+        method: "POST", body: { version: issue.version, body }
+      });
+      dom.issueCommentInput.value = "";
+    } catch (error) {
+      alert(error.message);
+    }
+  });
+
+  [dom.issueFilterStatus, dom.issueFilterPriority, dom.issueFilterAssignee, dom.issueFilterOverdue]
+    .filter(Boolean)
+    .forEach((control) => control.addEventListener("change", () => renderIssueList()));
 
   function switchEditorTab(name) {
     dom.editorTabs.querySelectorAll(".editor-tab").forEach((button) => {
@@ -431,6 +575,7 @@
     switchEditorTab("details");
     dom.issueForm.hidden = true;
     dom.issueEmpty.hidden = false;
+    renderIssueFilters();
     updateStageDerived();
     renderIssueList();
   }
@@ -583,6 +728,8 @@
   window.BoboCollab = {
     loadBootstrap,
     saveState,
+    saveResource,
+    resolveConflict,
     savePreferences,
     configure,
     openStageIssues,

@@ -119,6 +119,12 @@
             <div><strong>问题与子任务</strong><span>按阶段跟踪负责人和处理结果</span></div>
             <button id="addIssueBtn" type="button">+ 新建问题</button>
           </div>
+          <div class="issue-filters" aria-label="问题筛选">
+            <select id="issueFilterStatus" aria-label="按状态筛选"><option value="all">全部状态</option><option value="open">待处理</option><option value="in_progress">处理中</option><option value="closed">已关闭</option></select>
+            <select id="issueFilterPriority" aria-label="按优先级筛选"><option value="all">全部优先级</option><option value="urgent">紧急</option><option value="high">高</option><option value="medium">中</option><option value="low">低</option></select>
+            <select id="issueFilterAssignee" aria-label="按负责人筛选"><option value="all">全部负责人</option></select>
+            <label class="check-field"><input id="issueFilterOverdue" type="checkbox">仅看逾期</label>
+          </div>
           <div class="issue-workspace">
             <div id="issueList" class="issue-list" aria-label="问题列表"></div>
             <div id="issueForm" class="issue-detail" hidden>
@@ -134,9 +140,18 @@
                 <label class="field">状态
                   <select id="issueStatus"><option value="open">待处理</option><option value="in_progress">处理中</option></select>
                 </label>
+                <label class="field">优先级
+                  <select id="issuePriority"><option value="urgent">紧急</option><option value="high">高</option><option value="medium">中</option><option value="low">低</option></select>
+                </label>
                 <label class="field">负责人<select id="issueAssignee"></select></label>
+                <label class="field">截止日期<input id="issueDueDate" type="date"></label>
               </div>
               <div id="issueAudit" class="issue-audit"></div>
+              <section class="issue-comments">
+                <div class="issue-comments-head"><strong>评论</strong><span>评论发布后不可修改或删除</span></div>
+                <div id="issueCommentList" class="issue-comment-list"></div>
+                <div class="issue-comment-compose"><textarea id="issueCommentInput" rows="2" placeholder="添加评论"></textarea><button id="addCommentBtn" class="secondary" type="button">发表评论</button></div>
+              </section>
               <div class="issue-actions">
                 <button id="issueCloseBtn" class="secondary" type="button">关闭问题</button>
                 <button id="saveIssueBtn" type="button">保存问题</button>
@@ -174,6 +189,24 @@
           </form>
         </div>
       </div>
+    </dialog>
+
+    <dialog id="conflictDialog" class="conflict-dialog">
+      <form method="dialog">
+        <div class="editor-head">
+          <div><p class="dialog-eyebrow">并发冲突</p><h2>数据已被其他用户更新</h2></div>
+          <button class="icon-button" value="cancel" aria-label="关闭" type="submit">×</button>
+        </div>
+        <p class="conflict-description">请选择继续使用服务器版本，或使用当前草稿基于最新版重试。</p>
+        <div class="conflict-values">
+          <section><strong>当前草稿</strong><pre id="conflictDraft"></pre></section>
+          <section><strong>服务器最新版</strong><pre id="conflictServer"></pre></section>
+        </div>
+        <menu class="editor-actions">
+          <button id="conflictServerBtn" value="server" type="submit">加载服务器版本</button>
+          <button id="conflictRetryBtn" value="retry" type="submit">保留草稿并重试</button>
+        </menu>
+      </form>
     </dialog>
 
     <script src="/collab.js"></script>

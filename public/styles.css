@@ -212,6 +212,26 @@ body.auth-pending { overflow: hidden; background: #eef3f8; }
 .issue-state-badge.closed { border-color: #a5d8bc; color: #137a4a; background: #ecfdf3; }
 .danger-text { border-color: transparent; color: var(--red); background: transparent; }
 .issue-audit { display: grid; gap: 3px; border-top: 1px solid #e8edf4; padding-top: 9px; color: var(--muted); font-size: 11px; }
+.issue-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding-bottom: 12px; }
+.issue-filters select { min-width: 108px; }
+.issue-comments { display: grid; gap: 8px; border-top: 1px solid #e8edf4; padding-top: 10px; }
+.issue-comments-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.issue-comments-head span { color: var(--muted); font-size: 11px; }
+.issue-comment-list { display: grid; gap: 7px; max-height: 150px; overflow: auto; }
+.issue-comment { border: 1px solid #e8edf4; border-radius: 6px; padding: 8px 9px; background: #fbfcfe; }
+.issue-comment > div { display: flex; justify-content: space-between; gap: 8px; color: #17324d; font-size: 11px; }
+.issue-comment time { color: var(--muted); font-weight: 400; }
+.issue-comment p { margin: 5px 0 0; color: #344054; font-size: 12px; white-space: pre-wrap; }
+.issue-comments-empty { margin: 0; color: var(--muted); font-size: 12px; }
+.issue-comment-compose { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 8px; }
+.issue-comment-compose textarea { min-height: 44px; resize: vertical; }
+.conflict-dialog { width: min(820px, calc(100vw - 40px)); border: 0; border-radius: 8px; padding: 0; box-shadow: 0 24px 80px rgba(16, 24, 40, 0.28); }
+.conflict-dialog::backdrop { background: rgba(15, 23, 42, 0.35); }
+.conflict-description { margin: 0; padding: 0 18px 12px; color: var(--muted); font-size: 13px; }
+.conflict-values { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 0 18px 14px; }
+.conflict-values section { min-width: 0; }
+.conflict-values strong { display: block; margin-bottom: 5px; color: #17324d; font-size: 12px; }
+.conflict-values pre { max-height: 260px; overflow: auto; margin: 0; border: 1px solid var(--line); border-radius: 6px; padding: 10px; color: #344054; background: #f8fafc; font: 11px/1.5 Consolas, monospace; white-space: pre-wrap; word-break: break-word; }
 .users-dialog { width: min(760px, calc(100vw - 40px)); border: 0; border-radius: 8px; padding: 0; box-shadow: 0 24px 80px rgba(16, 24, 40, 0.28); }
 .users-dialog::backdrop { background: rgba(15, 23, 42, 0.35); }
 .users-layout { display: grid; grid-template-columns: 0.9fr 1.1fr; min-height: 390px; }
@@ -230,4 +250,6 @@ body.auth-pending { overflow: hidden; background: #eef3f8; }
   .issue-workspace, .users-layout { grid-template-columns: 1fr; }
   .issue-list, .users-list { max-height: 180px; border-right: 0; border-bottom: 1px solid var(--line); }
   .issue-toolbar { align-items: start; flex-direction: column; }
+  .conflict-values { grid-template-columns: 1fr; }
+  .issue-comment-compose { grid-template-columns: 1fr; }
 }
