@@ -1,7 +1,5 @@
 (() => {
   const dom = {
-    authScreen: document.querySelector("#authScreen"),
-    authForm: document.querySelector("#authForm"),
     authTitle: document.querySelector("#authTitle"),
     authDescription: document.querySelector("#authDescription"),
     authSubmit: document.querySelector("#authSubmit"),
@@ -16,6 +14,7 @@
     accountName: document.querySelector("#accountName"),
     accountInitial: document.querySelector("#accountInitial"),
     manageUsersBtn: document.querySelector("#manageUsersBtn"),
+    changeAvatarBtn: document.querySelector("#changeAvatarBtn"),
     changePasswordBtn: document.querySelector("#changePasswordBtn"),
     logoutBtn: document.querySelector("#logoutBtn"),
     shutdownBtn: document.querySelector("#shutdownBtn"),
@@ -61,20 +60,23 @@
     managedUserId: document.querySelector("#managedUserId"),
     managedUsername: document.querySelector("#managedUsername"),
     managedDisplayName: document.querySelector("#managedDisplayName"),
+    managedAvatar: document.querySelector("#managedAvatar"),
     managedRole: document.querySelector("#managedRole"),
     managedPassword: document.querySelector("#managedPassword"),
+    managedPasswordField: document.querySelector("#managedPasswordField"),
+    managedSystemsField: document.querySelector("#managedSystemsField"),
+    managedSystems: document.querySelector("#managedSystems"),
     managedActive: document.querySelector("#managedActive"),
     managedActiveField: document.querySelector("#managedActiveField"),
     userFormError: document.querySelector("#userFormError"),
     newUserBtn: document.querySelector("#newUserBtn"),
+    deleteManagedUserBtn: document.querySelector("#deleteManagedUserBtn"),
     deleteEditorBtn: document.querySelector("#deleteEditorBtn")
   };
 
   let currentUser = null;
   let users = [];
   let revision = 0;
-  let needsSetup = false;
-  let authWaiter = null;
   let stageContext = null;
   let onStateChanged = null;
   let onExternalChange = null;
@@ -106,71 +108,32 @@
     return payload;
   }
 
-  function showAuth(setup) {
-    needsSetup = Boolean(setup);
-    document.body.classList.add("auth-pending");
-    dom.appShell.hidden = true;
-    dom.authScreen.hidden = false;
-    dom.displayNameField.hidden = !needsSetup;
-    dom.authTitle.textContent = needsSetup ? "创建首位管理员" : "登录 Bobo";
-    dom.authDescription.textContent = needsSetup
-      ? "设置局域网工作区的管理员账户。完成后可继续创建团队成员。"
-      : "使用团队账户继续。";
-    dom.authSubmit.textContent = needsSetup ? "创建并进入" : "登录";
-    dom.authPassword.autocomplete = needsSetup ? "new-password" : "current-password";
-    dom.authError.hidden = true;
-    dom.authUsername.focus();
-    return new Promise((resolve) => { authWaiter = resolve; });
-  }
-
   function showApp() {
-    document.body.classList.remove("auth-pending");
-    dom.authScreen.hidden = true;
     dom.appShell.hidden = false;
     dom.accountName.textContent = currentUser.displayName;
-    dom.accountInitial.textContent = currentUser.displayName.slice(0, 1).toUpperCase();
+    dom.accountInitial.textContent = currentUser.avatarText;
     dom.manageUsersBtn.hidden = currentUser.role !== "admin";
+    dom.changePasswordBtn.hidden = currentUser.role !== "admin";
     dom.shutdownBtn.hidden = currentUser.role !== "admin";
     dom.deleteEditorBtn.hidden = currentUser.role !== "admin";
   }
 
-  dom.authForm.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    dom.authError.hidden = true;
-    dom.authSubmit.disabled = true;
-    try {
-      const body = {
-        username: dom.authUsername.value,
-        password: dom.authPassword.value,
-        displayName: dom.authDisplayName.value
-      };
-      const endpoint = needsSetup ? "/api/auth/setup" : "/api/auth/login";
-      await api(endpoint, { method: "POST", body });
-      dom.authPassword.value = "";
-      authWaiter?.();
-      authWaiter = null;
-    } catch (error) {
-      dom.authError.textContent = error.message;
-      dom.authError.hidden = false;
-    } finally {
-      dom.authSubmit.disabled = false;
-    }
-  });
-
   async function loadBootstrap() {
-    while (true) {
-      try {
-        const payload = await api("/api/bootstrap");
-        currentUser = payload.user;
-        users = payload.users || [];
-        revision = Number(payload.revision || 0);
-        hydratePreferences(payload.state);
-        showApp();
-        return payload;
-      } catch (error) {
-        if (error.status !== 401) throw error;
-        await showAuth(error.payload?.needsSetup);
+    try {
+      const payload = await api("/api/bootstrap");
+      currentUser = payload.user;
+      users = payload.users || [];
+      revision = Number(payload.revision || 0);
+      hydratePreferences(payload.state);
+      showApp();
+      window.scrollTo(0, 0);
+      return payload;
+    } catch (error) {
+      if (error.status === 401) {
+        location.replace("/login.html");
+        return new Promise(() => {});
       }
+      throw error;
     }
   }
 
@@ -275,7 +238,7 @@
     if (!id) return empty;
     const user = userById(id);
     if (!user) return "历史用户";
-    return `${user.displayName}${user.active ? "" : "（已停用）"}`;
+    return `${user.displayName}${user.deletedAt ? "（已删除）" : user.active ? "" : "（已停用）"}`;
   }
 
   function formatTime(value) {
@@ -308,9 +271,11 @@
   }
 
   function renderAssignees(selectedId) {
-    const choices = [{ id: "", displayName: "未分配", active: true }, ...users.filter((item) => item.active)];
+    const systemId = stageContext?.project?.systemId;
+    const assignable = users.filter((item) => item.active && !item.deletedAt && (item.role === "admin" || item.systemIds?.includes(systemId)));
+    const choices = [{ id: "", displayName: "未分配", active: true }, ...assignable];
     const selected = userById(selectedId);
-    if (selected && !selected.active) choices.push(selected);
+    if (selected && (!selected.active || selected.deletedAt || !choices.some((item) => item.id === selected.id))) choices.push(selected);
     dom.issueAssignee.innerHTML = choices.map((user) =>
       `<option value="${escapeHtml(user.id)}" ${user.id === selectedId ? "selected" : ""}>${escapeHtml(user.id ? userName(user.id) : user.displayName)}</option>`
     ).join("");
@@ -318,10 +283,12 @@
 
   function renderIssueFilters() {
     const previousAssignee = dom.issueFilterAssignee.value || "all";
-    dom.issueFilterAssignee.innerHTML = `<option value="all">全部负责人</option>${users.map((user) =>
+    const systemId = stageContext?.project?.systemId;
+    const relevantUsers = users.filter((user) => user.role === "admin" || user.systemIds?.includes(systemId) || stageIssues().some((issue) => issue.assigneeUserId === user.id));
+    dom.issueFilterAssignee.innerHTML = `<option value="all">全部负责人</option>${relevantUsers.map((user) =>
       `<option value="${escapeHtml(user.id)}">${escapeHtml(userName(user.id))}</option>`
     ).join("")}`;
-    dom.issueFilterAssignee.value = users.some((user) => user.id === previousAssignee) ? previousAssignee : "all";
+    dom.issueFilterAssignee.value = relevantUsers.some((user) => user.id === previousAssignee) ? previousAssignee : "all";
   }
 
   function renderIssueList(selectedId = dom.issueId.value) {
@@ -587,34 +554,69 @@
     dom.deleteEditorBtn.hidden = !isAdmin();
   }
 
+  function managedSystemIds() {
+    return [...dom.managedSystems.querySelectorAll("input:checked")].map((input) => input.value);
+  }
+
+  function renderManagedSystems(selectedIds = []) {
+    const selected = new Set(selectedIds);
+    dom.managedSystems.innerHTML = (state.systems || []).map((system) => `
+      <label><input type="checkbox" value="${escapeHtml(system.id)}" ${selected.has(system.id) ? "checked" : ""}>${escapeHtml(system.name)}</label>
+    `).join("");
+  }
+
+  function updateRoleFields() {
+    const admin = dom.managedRole.value === "admin";
+    dom.managedPasswordField.hidden = !admin;
+    dom.managedSystemsField.hidden = admin;
+    dom.managedPassword.required = admin && !dom.managedUserId.value;
+  }
+
   function resetUserForm() {
     dom.userForm.reset();
     dom.managedUserId.value = "";
     dom.managedUsername.disabled = false;
+    dom.managedRole.value = "member";
     dom.managedActive.checked = true;
     dom.managedActiveField.hidden = true;
+    dom.managedAvatar.value = "";
     dom.userFormTitle.textContent = "新增账户";
+    dom.deleteManagedUserBtn.hidden = true;
+    renderManagedSystems((state.systems || []).map((system) => system.id));
+    updateRoleFields();
     dom.userFormError.hidden = true;
   }
 
   function fillUserForm(user) {
+    if (!user) return;
     dom.managedUserId.value = user.id;
     dom.managedUsername.value = user.username;
     dom.managedUsername.disabled = true;
     dom.managedDisplayName.value = user.displayName;
+    dom.managedAvatar.value = user.avatarText;
     dom.managedRole.value = user.role;
     dom.managedPassword.value = "";
     dom.managedActive.checked = user.active;
     dom.managedActiveField.hidden = false;
     dom.userFormTitle.textContent = `编辑 / ${user.displayName}`;
+    dom.deleteManagedUserBtn.hidden = user.id === currentUser.id;
+    renderManagedSystems(user.systemIds || []);
+    updateRoleFields();
     dom.userFormError.hidden = true;
   }
 
+  function systemSummary(user) {
+    if (user.role === "admin") return "全部系统";
+    const names = (state.systems || []).filter((system) => user.systemIds?.includes(system.id)).map((system) => system.name);
+    return names.join("、") || "未关联系统";
+  }
+
   function renderUsers() {
-    dom.usersList.innerHTML = users.map((user) => `
+    const visibleUsers = users.filter((user) => !user.deletedAt);
+    dom.usersList.innerHTML = visibleUsers.map((user) => `
       <button type="button" class="user-row" data-user-id="${escapeHtml(user.id)}">
-        <span class="account-initial">${escapeHtml(user.displayName.slice(0, 1).toUpperCase())}</span>
-        <span><strong>${escapeHtml(user.displayName)}</strong><small>@${escapeHtml(user.username)}</small></span>
+        <span class="account-initial">${escapeHtml(user.avatarText)}</span>
+        <span><strong>${escapeHtml(user.displayName)}</strong><small>@${escapeHtml(user.username)} · ${escapeHtml(systemSummary(user))}</small></span>
         <span class="user-role">${user.role === "admin" ? "管理员" : "成员"}${user.active ? "" : " · 已停用"}</span>
       </button>
     `).join("");
@@ -631,8 +633,10 @@
       const body = {
         username: dom.managedUsername.value,
         displayName: dom.managedDisplayName.value,
+        avatarText: dom.managedAvatar.value,
         role: dom.managedRole.value,
         password: dom.managedPassword.value,
+        systemIds: managedSystemIds(),
         active: dom.managedActive.checked
       };
       const payload = await api(id ? `/api/users/${encodeURIComponent(id)}` : "/api/users", {
@@ -650,25 +654,66 @@
     }
   });
 
+  dom.managedRole.addEventListener("change", updateRoleFields);
+  dom.managedDisplayName.addEventListener("input", () => {
+    if (!dom.managedAvatar.value) dom.managedAvatar.value = Array.from(dom.managedDisplayName.value.trim())[0] || "";
+  });
+  dom.deleteManagedUserBtn.addEventListener("click", async () => {
+    const user = userById(dom.managedUserId.value);
+    if (!user || !confirm(`确定删除账户「${user.displayName}」吗？历史问题和评论中的身份将继续保留。`)) return;
+    try {
+      const payload = await api(`/api/users/${encodeURIComponent(user.id)}`, { method: "DELETE" });
+      const index = users.findIndex((item) => item.id === payload.user.id);
+      if (index >= 0) users[index] = payload.user;
+      revision = Number(payload.revision || revision);
+      renderUsers();
+      resetUserForm();
+    } catch (error) {
+      dom.userFormError.textContent = error.message;
+      dom.userFormError.hidden = false;
+    }
+  });
+
   dom.newUserBtn.addEventListener("click", resetUserForm);
   dom.closeUsersDialogBtn.addEventListener("click", () => dom.usersDialog.close());
-  dom.manageUsersBtn.addEventListener("click", () => {
+  dom.manageUsersBtn.addEventListener("click", async () => {
     dom.accountMenu.hidden = true;
-    renderUsers();
-    resetUserForm();
-    dom.usersDialog.showModal();
+    try {
+      const payload = await api("/api/users");
+      users = payload.users || users;
+      renderUsers();
+      resetUserForm();
+      dom.usersDialog.showModal();
+    } catch (error) {
+      alert(error.message);
+    }
+  });
+  dom.changeAvatarBtn.addEventListener("click", async () => {
+    dom.accountMenu.hidden = true;
+    const avatarText = prompt("输入一个头像字", currentUser.avatarText);
+    if (avatarText == null || avatarText === currentUser.avatarText) return;
+    try {
+      const payload = await api("/api/users/me/avatar", { method: "PATCH", body: { avatarText } });
+      currentUser = payload.user;
+      const index = users.findIndex((item) => item.id === currentUser.id);
+      if (index >= 0) users[index] = currentUser;
+      dom.accountInitial.textContent = currentUser.avatarText;
+      revision = Number(payload.revision || revision);
+    } catch (error) {
+      alert(error.message);
+    }
   });
 
   dom.changePasswordBtn.addEventListener("click", async () => {
     dom.accountMenu.hidden = true;
     const currentPassword = prompt("请输入当前密码");
     if (currentPassword == null) return;
-    const nextPassword = prompt("请输入新密码（至少 6 位）");
+    const nextPassword = prompt("请输入新密码（至少 4 位）");
     if (nextPassword == null) return;
     try {
       await api("/api/auth/password", { method: "POST", body: { currentPassword, nextPassword } });
       alert("密码已修改，请重新登录。");
-      location.reload();
+      location.replace("/login.html");
     } catch (error) {
       alert(error.message);
     }
@@ -676,7 +721,7 @@
 
   dom.logoutBtn.addEventListener("click", async () => {
     await api("/api/auth/logout", { method: "POST" }).catch(() => {});
-    location.reload();
+    location.replace("/login.html");
   });
 
   dom.accountBtn.addEventListener("click", (event) => {
@@ -708,7 +753,7 @@
         dom.syncNotice.hidden = true;
         await onExternalChange?.();
       } catch (error) {
-        if (error.status === 401) location.reload();
+        if (error.status === 401) location.replace("/login.html");
       }
     }, 5000);
   }

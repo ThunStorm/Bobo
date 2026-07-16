@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>登录 · Bobo</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body class="login-page">
+    <main class="login-shell">
+      <section class="login-brand" aria-label="Bobo">
+        <span class="login-brand-mark">B</span>
+        <div><strong>Bobo</strong><span>轻量甘特项目管理</span></div>
+      </section>
+
+      <section class="login-panel">
+        <div class="login-panel-head">
+          <p class="dialog-eyebrow">局域网工作区</p>
+          <h1 id="loginTitle">选择账户</h1>
+          <p id="loginDescription">点击头像进入你的工作区。</p>
+        </div>
+
+        <form id="setupForm" class="login-form" hidden>
+          <label class="field">用户名<input id="setupUsername" autocomplete="username" required></label>
+          <label class="field">显示名<input id="setupDisplayName" autocomplete="name" required></label>
+          <label class="field">管理员密码<input id="setupPassword" type="password" minlength="4" autocomplete="new-password" required></label>
+          <p class="field-note">至少 4 位，不要求大小写、数字或符号组合。</p>
+          <p id="setupError" class="form-error" role="alert" hidden></p>
+          <button type="submit">创建并进入</button>
+        </form>
+
+        <div id="chooser" hidden>
+          <div id="loginUsers" class="login-users" aria-label="账户列表"></div>
+          <form id="adminLoginForm" class="admin-login-form" hidden>
+            <div class="admin-login-user"><span id="adminLoginAvatar" class="login-avatar small">管</span><div><strong id="adminLoginName"></strong><span>管理员</span></div></div>
+            <label class="field">密码<input id="adminLoginPassword" type="password" minlength="4" autocomplete="current-password" required></label>
+            <p id="loginError" class="form-error" role="alert" hidden></p>
+            <div class="admin-login-actions"><button id="cancelAdminLogin" class="secondary" type="button">返回</button><button type="submit">进入工作区</button></div>
+          </form>
+        </div>
+      </section>
+    </main>
+    <script src="/login.js"></script>
+  </body>
+</html>

@@ -560,19 +560,22 @@ function renderSystemPicker() {
       remove.type = "button";
       remove.textContent = "删除系统";
       remove.addEventListener("click", () => deleteSystem(system));
-      actions.append(rename, remove);
+      actions.append(rename);
+      if (BoboCollab.isAdmin()) actions.append(remove);
       row.append(actions);
     }
 
     menu.append(row);
   }
 
-  const addButton = document.createElement("button");
-  addButton.type = "button";
-  addButton.className = "system-add-button";
-  addButton.textContent = "+ 新增系统";
-  addButton.addEventListener("click", addSystem);
-  menu.append(addButton);
+  if (BoboCollab.isAdmin()) {
+    const addButton = document.createElement("button");
+    addButton.type = "button";
+    addButton.className = "system-add-button";
+    addButton.textContent = "+ 新增系统";
+    addButton.addEventListener("click", addSystem);
+    menu.append(addButton);
+  }
 
   els.systemPicker.append(menu);
 }

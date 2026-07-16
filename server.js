@@ -85,15 +85,67 @@ function statusForError(error) {
   return 400;
 }
 
-function resourcePayload(payload) {
-  return { ...payload, state: store.composeState() };
+function assertSystemAccess(user, systemId) {
+  if (!auth.canAccessSystem(user, systemId)) {
+    const error = new Error("无权访问该系统");
+    error.code = "FORBIDDEN";
+    throw error;
+  }
+}
+
+function projectContext(user, projectId, state = store.composeState()) {
+  for (const system of state.systems) {
+    const project = (system.projects || []).find((item) => item.id === projectId);
+    if (project) {
+      assertSystemAccess(user, system.id);
+      return { state, system, project };
+    }
+  }
+  throw notFound("项目不存在");
+}
+
+function stateForUser(user, state = store.composeState()) {
+  if (user.role === "admin") return state;
+  const systems = state.systems.filter((system) => auth.canAccessSystem(user, system.id));
+  return {
+    ...state,
+    systems,
+    selectedSystemId: systems[0]?.id || "",
+    selectedProjectId: systems[0]?.projects?.[0]?.id || ""
+  };
+}
+
+function mergeScopedState(user, submitted) {
+  if (user.role === "admin") return submitted;
+  const current = store.composeState();
+  const allowed = new Set(user.systemIds || []);
+  if ((submitted.systems || []).some((system) => !allowed.has(system.id))) {
+    const error = new Error("提交内容包含无权访问的系统");
+    error.code = "FORBIDDEN";
+    throw error;
+  }
+  const currentScoped = stateForUser(user, current);
+  if (store.hasDeletion(currentScoped, submitted)) {
+    const error = new Error("删除项目、需求或阶段仅限管理员");
+    error.code = "FORBIDDEN";
+    throw error;
+  }
+  const submittedById = new Map((submitted.systems || []).map((system) => [system.id, system]));
+  return {
+    ...submitted,
+    systems: current.systems.map((system) => allowed.has(system.id) ? (submittedById.get(system.id) || system) : system)
+  };
+}
+
+function resourcePayload(user, payload) {
+  return { ...payload, state: stateForUser(user) };
 }
 
 function publicBootstrap(user) {
   return {
     user,
     users: auth.listUsers(),
-    state: store.composeState(),
+    state: stateForUser(user),
     revision: store.getMeta().revision
   };
 }
@@ -129,11 +181,23 @@ async function routeApi(req, res, url) {
     return true;
   }
 
+  if (url.pathname === "/api/auth/choices" && req.method === "GET") {
+    sendJson(res, 200, { needsSetup: auth.needsSetup(), users: auth.loginChoices() });
+    return true;
+  }
+
   if (url.pathname === "/api/auth/setup" && req.method === "POST") {
     const input = await readBody(req);
     const user = auth.setup(input);
     const session = auth.login(user.username, input.password);
     sendJson(res, 201, { user }, { "Set-Cookie": auth.cookieHeader(session.token) });
+    return true;
+  }
+
+  if (url.pathname === "/api/auth/select" && req.method === "POST") {
+    const input = await readBody(req);
+    const session = auth.selectUser(input.userId, input.password);
+    sendJson(res, 200, { user: session.user }, { "Set-Cookie": auth.cookieHeader(session.token) });
     return true;
   }
 
@@ -161,6 +225,13 @@ async function routeApi(req, res, url) {
     return true;
   }
 
+  if (url.pathname === "/api/users/me/avatar" && req.method === "PATCH") {
+    const input = await readBody(req);
+    const updated = auth.changeAvatar(user.id, input.avatarText);
+    sendJson(res, 200, { user: updated, revision: store.getMeta().revision });
+    return true;
+  }
+
   if (url.pathname === "/api/auth/password" && req.method === "POST") {
     const input = await readBody(req);
     auth.changePassword(user.id, input.currentPassword, input.nextPassword);
@@ -179,30 +250,29 @@ async function routeApi(req, res, url) {
   }
 
   if (url.pathname === "/api/state" && req.method === "GET") {
-    sendJson(res, 200, store.composeState());
+    sendJson(res, 200, stateForUser(user));
     return true;
   }
 
   if (url.pathname === "/api/state" && req.method === "PUT") {
     const input = await readBody(req);
-    const nextState = input.state || input;
+    const submittedState = input.state || input;
     const expectedRevision = input.state ? input.revision : null;
-    if (user.role !== "admin" && store.hasDeletion(store.composeState(), nextState)) {
-      sendJson(res, 403, { error: "删除项目、需求或阶段仅限管理员" });
-      return true;
-    }
+    const nextState = mergeScopedState(user, submittedState);
     const meta = store.saveState(nextState, expectedRevision, user.id);
-    sendJson(res, 200, { ok: true, revision: meta.revision, state: store.composeState() });
+    sendJson(res, 200, { ok: true, revision: meta.revision, state: stateForUser(user) });
     return true;
   }
 
   if (url.pathname === "/api/systems" && req.method === "GET") {
-    sendJson(res, 200, store.listSystems());
+    const visible = stateForUser(user);
+    sendJson(res, 200, { systems: visible.systems, systemsVersion: visible.systemsVersion, revision: store.getMeta().revision });
     return true;
   }
 
   if (url.pathname === "/api/systems" && req.method === "POST") {
-    sendJson(res, 201, resourcePayload(store.createSystem(await readBody(req))));
+    assertAdmin(user);
+    sendJson(res, 201, resourcePayload(user, store.createSystem(await readBody(req))));
     return true;
   }
 
@@ -212,19 +282,23 @@ async function routeApi(req, res, url) {
     const state = store.composeState();
     const system = state.systems.find((item) => item.id === systemId);
     if (!system) throw notFound("系统不存在");
+    assertSystemAccess(user, systemId);
     if (req.method === "GET") {
-      sendJson(res, 200, { system, revision: store.getMeta().revision, state });
+      sendJson(res, 200, { system, revision: store.getMeta().revision, state: stateForUser(user, state) });
       return true;
     }
     if (req.method === "PATCH") {
       const input = await readBody(req);
-      sendJson(res, 200, resourcePayload(store.updateSystem(systemId, input, input.version)));
+      sendJson(res, 200, resourcePayload(user, store.updateSystem(systemId, input, input.version)));
       return true;
     }
     if (req.method === "DELETE") {
       assertAdmin(user);
       const input = await readBody(req);
-      sendJson(res, 200, resourcePayload(store.deleteSystem(systemId, input.version)));
+      auth.assertSystemRemovalSafe(systemId);
+      const payload = store.deleteSystem(systemId, input.version);
+      auth.removeSystem(systemId);
+      sendJson(res, 200, resourcePayload(user, payload));
       return true;
     }
   }
@@ -235,13 +309,14 @@ async function routeApi(req, res, url) {
     const state = store.composeState();
     const system = state.systems.find((item) => item.id === systemId);
     if (!system) throw notFound("系统不存在");
+    assertSystemAccess(user, systemId);
     if (req.method === "GET") {
-      sendJson(res, 200, { projects: system.projects, revision: store.getMeta().revision, state });
+      sendJson(res, 200, { projects: system.projects, revision: store.getMeta().revision, state: stateForUser(user, state) });
       return true;
     }
     if (req.method === "POST") {
       const input = await readBody(req);
-      sendJson(res, 201, resourcePayload(store.createProject(systemId, input, input.systemVersion)));
+      sendJson(res, 201, resourcePayload(user, store.createProject(systemId, input, input.systemVersion)));
       return true;
     }
   }
@@ -249,23 +324,21 @@ async function routeApi(req, res, url) {
   const projectMatch = url.pathname.match(/^\/api\/projects\/([^/]+)$/);
   if (projectMatch) {
     const projectId = decodeURIComponent(projectMatch[1]);
-    const state = store.composeState();
-    const project = state.systems.flatMap((item) => item.projects || []).find((item) => item.id === projectId);
-    if (!project) throw notFound("项目不存在");
+    const { state, project } = projectContext(user, projectId);
     if (req.method === "GET") {
-      sendJson(res, 200, { project, revision: store.getMeta().revision, state });
+      sendJson(res, 200, { project, revision: store.getMeta().revision, state: stateForUser(user, state) });
       return true;
     }
     if (req.method === "PATCH") {
       const input = await readBody(req);
       input.actorUserId = user.id;
-      sendJson(res, 200, resourcePayload(store.updateProject(projectId, input, input.version)));
+      sendJson(res, 200, resourcePayload(user, store.updateProject(projectId, input, input.version)));
       return true;
     }
     if (req.method === "DELETE") {
       assertAdmin(user);
       const input = await readBody(req);
-      sendJson(res, 200, resourcePayload(store.deleteProject(projectId, input.systemVersion, input.version)));
+      sendJson(res, 200, resourcePayload(user, store.deleteProject(projectId, input.systemVersion, input.version)));
       return true;
     }
   }
@@ -273,9 +346,10 @@ async function routeApi(req, res, url) {
   const requirementCollectionMatch = url.pathname.match(/^\/api\/projects\/([^/]+)\/requirements$/);
   if (requirementCollectionMatch && req.method === "POST") {
     const projectId = decodeURIComponent(requirementCollectionMatch[1]);
+    projectContext(user, projectId);
     const input = await readBody(req);
     input.actorUserId = user.id;
-    sendJson(res, 201, resourcePayload(store.createRequirement(projectId, input)));
+    sendJson(res, 201, resourcePayload(user, store.createRequirement(projectId, input)));
     return true;
   }
 
@@ -283,16 +357,17 @@ async function routeApi(req, res, url) {
   if (requirementMatch) {
     const projectId = decodeURIComponent(requirementMatch[1]);
     const requirementId = decodeURIComponent(requirementMatch[2]);
+    projectContext(user, projectId);
     if (req.method === "PATCH") {
       const input = await readBody(req);
       input.actorUserId = user.id;
-      sendJson(res, 200, resourcePayload(store.updateRequirement(projectId, requirementId, input)));
+      sendJson(res, 200, resourcePayload(user, store.updateRequirement(projectId, requirementId, input)));
       return true;
     }
     if (req.method === "DELETE") {
       assertAdmin(user);
       const input = await readBody(req);
-      sendJson(res, 200, resourcePayload(store.deleteRequirement(projectId, requirementId, input.projectVersion, input.version)));
+      sendJson(res, 200, resourcePayload(user, store.deleteRequirement(projectId, requirementId, input.projectVersion, input.version)));
       return true;
     }
   }
@@ -301,9 +376,10 @@ async function routeApi(req, res, url) {
   if (stageCollectionMatch && req.method === "POST") {
     const projectId = decodeURIComponent(stageCollectionMatch[1]);
     const requirementId = decodeURIComponent(stageCollectionMatch[2]);
+    projectContext(user, projectId);
     const input = await readBody(req);
     input.actorUserId = user.id;
-    sendJson(res, 201, resourcePayload(store.createStage(projectId, requirementId, input)));
+    sendJson(res, 201, resourcePayload(user, store.createStage(projectId, requirementId, input)));
     return true;
   }
 
@@ -311,22 +387,24 @@ async function routeApi(req, res, url) {
   if (stageMatch) {
     const projectId = decodeURIComponent(stageMatch[1]);
     const requirementId = decodeURIComponent(stageMatch[2]);
+    projectContext(user, projectId);
     const stageId = decodeURIComponent(stageMatch[3]);
     if (req.method === "PATCH") {
       const input = await readBody(req);
       input.actorUserId = user.id;
-      sendJson(res, 200, resourcePayload(store.updateStage(projectId, requirementId, stageId, input)));
+      sendJson(res, 200, resourcePayload(user, store.updateStage(projectId, requirementId, stageId, input)));
       return true;
     }
     if (req.method === "DELETE") {
       assertAdmin(user);
       const input = await readBody(req);
-      sendJson(res, 200, resourcePayload(store.deleteStage(projectId, requirementId, stageId, input.requirementVersion, input.version)));
+      sendJson(res, 200, resourcePayload(user, store.deleteStage(projectId, requirementId, stageId, input.requirementVersion, input.version)));
       return true;
     }
   }
 
   if (url.pathname === "/api/users" && req.method === "GET") {
+    assertAdmin(user);
     sendJson(res, 200, { users: auth.listUsers() });
     return true;
   }
@@ -345,21 +423,28 @@ async function routeApi(req, res, url) {
     sendJson(res, 200, { user: updated, revision: store.getMeta().revision });
     return true;
   }
+  if (userMatch && req.method === "DELETE") {
+    assertAdmin(user);
+    const deleted = auth.deleteUser(decodeURIComponent(userMatch[1]), user.id);
+    sendJson(res, 200, { user: deleted, revision: store.getMeta().revision });
+    return true;
+  }
 
   const issueMatch = url.pathname.match(/^\/api\/projects\/([^/]+)\/issues(?:\/([^/]+))?(?:\/(close|reopen))?$/);
   if (issueMatch) {
     const projectId = decodeURIComponent(issueMatch[1]);
     const issueId = issueMatch[2] ? decodeURIComponent(issueMatch[2]) : "";
     const action = issueMatch[3] || "";
+    const { system } = projectContext(user, projectId);
     const input = ["POST", "PATCH", "DELETE"].includes(req.method) ? await readBody(req) : {};
 
     if (!issueId && req.method === "POST") {
-      auth.assertAssignee(input.assigneeUserId);
+      auth.assertAssignee(input.assigneeUserId, system.id);
       sendJson(res, 201, store.createIssue(projectId, input, user.id));
       return true;
     }
     if (issueId && !action && req.method === "PATCH") {
-      auth.assertAssignee(input.assigneeUserId);
+      auth.assertAssignee(input.assigneeUserId, system.id);
       sendJson(res, 200, store.updateIssue(projectId, issueId, input, user.id));
       return true;
     }
@@ -378,6 +463,7 @@ async function routeApi(req, res, url) {
   if (commentMatch && req.method === "POST") {
     const projectId = decodeURIComponent(commentMatch[1]);
     const issueId = decodeURIComponent(commentMatch[2]);
+    projectContext(user, projectId);
     const input = await readBody(req);
     sendJson(res, 201, store.addIssueComment(projectId, issueId, input.body, user.id, input.version));
     return true;

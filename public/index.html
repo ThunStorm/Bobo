@@ -6,26 +6,7 @@
     <title>Bobo</title>
     <link rel="stylesheet" href="/styles.css">
   </head>
-  <body class="auth-pending">
-    <section id="authScreen" class="auth-screen" aria-live="polite">
-      <div class="auth-brand">
-        <span class="auth-brand-mark">B</span>
-        <div><strong>Bobo</strong><span>轻量甘特项目管理</span></div>
-      </div>
-      <form id="authForm" class="auth-form">
-        <div>
-          <p id="authEyebrow" class="auth-eyebrow">局域网工作区</p>
-          <h1 id="authTitle">登录 Bobo</h1>
-          <p id="authDescription">使用团队账户继续。</p>
-        </div>
-        <label id="displayNameField" class="field" hidden>显示名<input id="authDisplayName" autocomplete="name"></label>
-        <label class="field">用户名<input id="authUsername" autocomplete="username" required></label>
-        <label class="field">密码<input id="authPassword" type="password" autocomplete="current-password" minlength="6" required></label>
-        <p id="authError" class="form-error" role="alert" hidden></p>
-        <button id="authSubmit" type="submit">登录</button>
-      </form>
-    </section>
-
+  <body>
     <div id="appShell" class="app-shell" hidden>
       <header class="topbar">
         <div>
@@ -44,6 +25,7 @@
             </button>
             <div id="accountMenu" class="account-menu" role="menu" hidden>
               <button id="manageUsersBtn" type="button" role="menuitem">账户管理</button>
+              <button id="changeAvatarBtn" type="button" role="menuitem">修改头像</button>
               <button id="changePasswordBtn" type="button" role="menuitem">修改密码</button>
               <button id="logoutBtn" type="button" role="menuitem">退出登录</button>
             </div>
@@ -177,12 +159,14 @@
         <div class="users-layout">
           <div id="usersList" class="users-list"></div>
           <form id="userForm" class="user-form">
-            <h3 id="userFormTitle">新增账户</h3>
+            <div class="user-form-head"><h3 id="userFormTitle">新增账户</h3><button id="deleteManagedUserBtn" class="danger-button" type="button" hidden>删除账户</button></div>
             <input id="managedUserId" type="hidden">
             <label class="field">用户名<input id="managedUsername" required></label>
             <label class="field">显示名<input id="managedDisplayName" required></label>
+            <label class="field">头像字<input id="managedAvatar" maxlength="2" required></label>
             <label class="field">角色<select id="managedRole"><option value="member">成员</option><option value="admin">管理员</option></select></label>
-            <label class="field">密码<input id="managedPassword" type="password" minlength="6" placeholder="编辑时留空表示不修改"></label>
+            <label id="managedPasswordField" class="field">管理员密码<input id="managedPassword" type="password" minlength="4" placeholder="至少 4 位，编辑时留空表示不修改"></label>
+            <fieldset id="managedSystemsField" class="managed-systems"><legend>可访问系统</legend><div id="managedSystems"></div></fieldset>
             <label id="managedActiveField" class="check-field"><input id="managedActive" type="checkbox" checked>账户启用</label>
             <p id="userFormError" class="form-error" hidden></p>
             <div class="user-form-actions"><button id="newUserBtn" type="button" class="secondary">清空</button><button type="submit">保存账户</button></div>

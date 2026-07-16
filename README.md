@@ -31,12 +31,15 @@ npm run start:no-open
 
 ## 账户与权限
 
-首次访问时创建首位管理员。账户保存在运行时文件 `data/users.json`，密码使用 Node.js `scrypt` 哈希保存，该文件已被 Git 忽略。
+当不存在有效管理员时，访问独立登录页 `/login.html` 创建管理员。管理员密码至少 4 位，不要求大小写、数字或符号组合；密码继续使用 Node.js `scrypt` 哈希保存。
 
-- 管理员：管理账户，新增和编辑业务内容，删除系统、项目、需求、阶段和问题，在本机关闭服务。
-- 成员：查看、新增和编辑业务内容，创建、分配、更新、关闭或重新打开问题；不能执行结构性删除。
-- 账户只能停用，不能物理删除，以保留问题负责人、评论作者和关闭记录。
-- 会话使用局域网 HTTP Cookie，服务重启或会话过期后需要重新登录。
+- 管理员：通过头像选择后输入密码，访问全部系统，管理账户和系统，删除系统、项目、需求、阶段及问题，并可在本机关闭服务。
+- 普通成员：由管理员创建且没有密码，点击头像即可进入；只能查看和操作管理员为其关联的一个或多个系统。
+- 普通成员可在关联系统内新增和编辑项目、需求、阶段及问题，但不能创建系统或执行结构性删除。
+- 每个账户有一个单字头像；用户可修改自己的头像，管理员也可在账户管理中修改。
+- 删除账户采用逻辑删除：账户立即退出并从登录页消失，历史问题、评论、负责人和关闭记录继续显示原身份。
+- 最后一名有效管理员不能删除、停用或降级；管理员不能删除自己。
+- 会话使用 HttpOnly、SameSite Cookie，在服务重启或 24 小时过期后失效。
 
 ## 数据结构
 
@@ -44,7 +47,7 @@ npm run start:no-open
 data/
 ├─ meta.json                       # schema 版本和全局 revision
 ├─ systems.json                    # 系统、系统日期标记、项目顺序和系统版本
-├─ users.json                      # 运行时账户，Git 已忽略
+├─ users.json                      # 账户、头像、系统关联和管理员密码哈希，Git 已忽略
 ├─ users.example.json              # 无凭据示例
 └─ projects/
    └─ <project-id>/
@@ -81,9 +84,14 @@ data/
 
 ## 资源接口
 
-登录后可使用以下资源接口。系统、项目、需求和阶段写操作返回当前规范化 `state`，前端据此同步实体版本；问题写操作返回更新后的 `issue` 和全局 `revision`。
+登录后可使用以下资源接口。普通成员只能访问其关联系统；跨系统请求返回 `403`。结构写操作返回当前用户可见的规范化 `state`，问题写操作返回更新后的 `issue` 和全局 `revision`。
 
 ```text
+GET                       /api/auth/choices
+POST                      /api/auth/setup|select|login|logout
+GET, POST                 /api/users
+PATCH, DELETE             /api/users/:userId
+PATCH                     /api/users/me/avatar
 GET, POST                 /api/systems
 GET, PATCH, DELETE        /api/systems/:systemId
 GET, POST                 /api/systems/:systemId/projects
@@ -107,6 +115,7 @@ node --check server.js
 node --check lib/data-store.js
 node --check public/app.js
 node --check public/collab.js
+node --check public/login.js
 git diff --check
 ```
 
@@ -118,10 +127,11 @@ git diff --check
 
 1. 更新 README 和交接文档，说明数据、权限、接口和未完成验证。
 2. 运行与变更风险匹配的检查和测试。
-3. 提交到 Git，commit message 清楚描述本次业务变化。
-4. 不提交 `data/users.json`、备份目录、迁移文件、临时测试目录或本机运行时数据变化。
+3. 提交到 Git，并将当前开发分支推送到远端；commit message 清楚描述本次业务变化。
+4. 只有测试通过后才能声明完成并推送；若测试或推送失败，必须在交接中明确记录。
+5. 不提交 `data/users.json`、备份目录、迁移文件、临时测试目录或本机运行时数据变化。
 
-## TODO
+## 后续规划
 
-- 在右上角增加统一删除入口，并规划系统、项目、需求、阶段、问题等实体的全局删除逻辑与权限提示。
+- 评估是否将仍使用原生 prompt 的新增/改名流程迁移为应用内对话框，以提升可访问性和自动化测试能力。
 - 可信内网之外的部署需要另行规划 HTTPS、细粒度项目权限、审计导出和安全加固。

@@ -97,7 +97,7 @@ test("accounts are hashed and the final administrator stays protected", () => {
     assert.ok(doc.users[0].salt);
     assert.equal(auth.login("ADMIN", "secret1").user.id, admin.id);
     assert.throws(() => auth.updateUser(admin.id, { active: false }, admin.id), /最后一名管理员/);
-    const member = auth.createUser({ username: "member", displayName: "成员", password: "secret2", role: "member" });
+    const member = auth.createUser({ username: "member", displayName: "成员", role: "member", systemIds: store.composeState().systems.map((system) => system.id) });
     assert.equal(member.role, "member");
   } finally {
     cleanup(dir);
@@ -119,6 +119,56 @@ test("issue close stamps the server-side user and version conflicts are detected
       () => store.setIssueClosed("project-a", issue.id, false, "user-member", issue.version),
       (error) => error.code === "VERSION_CONFLICT"
     );
+  } finally {
+    cleanup(dir);
+  }
+});
+
+test("legacy members migrate to passwordless system-scoped accounts", () => {
+  const dir = tempDir("user-migration");
+  try {
+    const store = createDataStore(dir);
+    const auth = createAuth(store);
+    auth.setup({ username: "admin", displayName: "管理员", password: "1234" });
+    const doc = store.readJson(store.usersFile, { users: [] });
+    doc.schemaVersion = 1;
+    doc.users.push({
+      id: "user-legacy",
+      username: "legacy",
+      displayName: "旧成员",
+      role: "member",
+      active: true,
+      salt: "legacy-salt",
+      passwordHash: "legacy-hash",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    });
+    store.atomicWriteJson(store.usersFile, doc);
+
+    const migrated = auth.listUsers().find((user) => user.id === "user-legacy");
+    assert.equal(migrated.avatarText, "旧");
+    assert.deepEqual(migrated.systemIds, store.composeState().systems.map((system) => system.id));
+    assert.equal(auth.selectUser(migrated.id).user.id, migrated.id);
+    const persisted = store.readJson(store.usersFile, { users: [] }).users.find((user) => user.id === migrated.id);
+    assert.equal(Object.hasOwn(persisted, "passwordHash"), false);
+  } finally {
+    cleanup(dir);
+  }
+});
+
+test("four-character admin passwords and logical deletion protections are enforced", () => {
+  const dir = tempDir("admin-rules");
+  try {
+    const store = createDataStore(dir);
+    const auth = createAuth(store);
+    assert.throws(() => auth.setup({ username: "admin", displayName: "管理员", password: "123" }), /至少需要 4 位/);
+    const admin = auth.setup({ username: "admin", displayName: "管理员", password: "1234" });
+    const second = auth.createUser({ username: "admin2", displayName: "副管理员", role: "admin", password: "5678" });
+    assert.equal(auth.selectUser(second.id, "5678").user.role, "admin");
+    assert.throws(() => auth.deleteUser(admin.id, admin.id), /不能删除当前登录账户/);
+    const deleted = auth.deleteUser(second.id, admin.id);
+    assert.ok(deleted.deletedAt);
+    assert.equal(auth.loginChoices().some((user) => user.id === second.id), false);
   } finally {
     cleanup(dir);
   }
