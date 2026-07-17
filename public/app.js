@@ -1,6 +1,7 @@
 const DEFAULT_STAGE_TYPES = ["需求澄清", "工作量及商务", "功能开发", "技术测试", "业务测试"];
 let STAGE_TYPES = [...DEFAULT_STAGE_TYPES];
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
+const CUSTOM_STAGE_TYPE = "__custom__";
 
 const els = {
   gantt: document.querySelector("#gantt"),
@@ -21,6 +22,7 @@ const els = {
   viewEnd: document.querySelector("#viewEnd"),
   tooltip: document.querySelector("#tooltip"),
   dialog: document.querySelector("#editorDialog"),
+  closeEditorBtn: document.querySelector("#closeEditorBtn"),
   editorForm: document.querySelector("#editorForm"),
   editorTitle: document.querySelector("#editorTitle"),
   editorGrid: document.querySelector(".editor-grid"),
@@ -30,6 +32,7 @@ const els = {
   editStart: document.querySelector("#editStart"),
   editEnd: document.querySelector("#editEnd"),
   editOwner: document.querySelector("#editOwner"),
+  editOwnerOptions: document.querySelector("#editOwnerOptions"),
   editHours: document.querySelector("#editHours"),
   editStatus: document.querySelector("#editStatus"),
   editIssueOpen: document.querySelector("#editIssueOpen"),
@@ -897,7 +900,7 @@ async function saveInlineStageName(stage, input) {
   const project = getActiveProjects().find((item) => item.requirements.some((requirement) => requirement.stages.includes(stage)));
   const requirement = project?.requirements.find((item) => item.stages.includes(stage));
   if (!project || !requirement) return;
-  const title = !stage.title || STAGE_TYPES.includes(stage.title) ? value : stage.title;
+  const title = isCustomStageType(value) ? value : (!stage.title || STAGE_TYPES.includes(stage.title) ? value : stage.title);
   const payload = await patchResource(`/api/projects/${encodeURIComponent(project.id)}/requirements/${encodeURIComponent(requirement.id)}/stages/${encodeURIComponent(stage.id)}`, {
     type: value,
     title,
@@ -1118,6 +1121,24 @@ function hideTooltip() {
   els.tooltip.hidden = true;
 }
 
+function isCustomStageType(type) {
+  return !STAGE_TYPES.includes(String(type || "").trim());
+}
+
+function renderStageOwnerOptions(project) {
+  const names = [...new Set(BoboCollab.getUsers()
+    .filter((user) => user.active && !user.deletedAt && (user.role === "admin" || user.systemIds?.includes(project.systemId)))
+    .map((user) => String(user.displayName || "").trim())
+    .filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, "zh-CN"));
+
+  els.editOwnerOptions.replaceChildren(...names.map((name) => {
+    const option = document.createElement("option");
+    option.value = name;
+    return option;
+  }));
+}
+
 function setEditorMode(kind) {
   const stageMode = kind === "stage";
   BoboCollab.resetEditor(kind);
@@ -1155,11 +1176,12 @@ function openStageEditor(project, requirement, stage) {
   editing = { kind: "stage", project, requirement, stage };
   state.selectedProjectId = project.id;
   setEditorMode("stage");
-  els.editorTitle.textContent = `${requirement.title} / ${stage.type}`;
+  els.editorTitle.textContent = `${requirement.title} / ${isCustomStageType(stage.type) ? "自定义" : stage.type}`;
   els.editTitle.value = stage.title || "";
   renderStageTypeOptions(stage);
   els.editStart.value = stage.start;
   els.editEnd.value = stage.end;
+  renderStageOwnerOptions(project);
   els.editOwner.value = stage.owner || "";
   els.editHours.value = String(stage.hours || 0);
   els.editStatus.value = stage.status || "未开始";
@@ -1195,8 +1217,8 @@ function reopenEditingFromState() {
 async function saveEditor() {
   if (!editing) return;
   const value = els.editTitle.value.trim();
-  if (!value && editing.kind !== "stage") {
-    alert("名称不能为空");
+  if (!value) {
+    alert(editing.kind === "stage" ? "阶段标题不能为空" : "名称不能为空");
     return;
   }
 
@@ -1215,11 +1237,12 @@ async function saveEditor() {
     state.selectedProjectId = editing.project.id;
   } else if (editing.kind === "stage") {
     const stage = editing.stage;
-    const nextType = els.editType.value;
+    const selectedType = els.editType.value;
+    const nextType = selectedType === CUSTOM_STAGE_TYPE ? value : selectedType;
     const start = els.editStart.value;
     const end = els.editEnd.value < start ? start : els.editEnd.value;
     payload = await patchResource(`/api/projects/${encodeURIComponent(editing.project.id)}/requirements/${encodeURIComponent(editing.requirement.id)}/stages/${encodeURIComponent(stage.id)}`, {
-      title: value || nextType,
+      title: value,
       type: nextType,
       start,
       end,
@@ -1240,31 +1263,19 @@ async function saveEditor() {
 }
 
 function renderStageTypeOptions(currentStage) {
-  const defaultSet = new Set(STAGE_TYPES);
-  const seen = new Set();
-  const options = [];
-  const currentType = String(currentStage?.type || STAGE_TYPES[0] || "").trim();
-
-  const addOption = (type) => {
-    const value = String(type || "").trim();
-    if (!value || seen.has(value)) return;
-    seen.add(value);
-    options.push(value);
-  };
-
-  STAGE_TYPES.forEach(addOption);
-  addOption(currentType);
-
-  els.editType.replaceChildren();
-  for (const type of options) {
+  const currentType = String(currentStage?.type || "").trim();
+  els.editType.replaceChildren(...STAGE_TYPES.map((type) => {
     const option = document.createElement("option");
     option.value = type;
     option.textContent = type;
-    if (!defaultSet.has(type)) option.dataset.custom = "true";
-    els.editType.append(option);
-  }
+    return option;
+  }));
 
-  els.editType.value = currentType;
+  const customOption = document.createElement("option");
+  customOption.value = CUSTOM_STAGE_TYPE;
+  customOption.textContent = "自定义";
+  els.editType.append(customOption);
+  els.editType.value = isCustomStageType(currentType) ? CUSTOM_STAGE_TYPE : currentType;
 }
 
 async function deleteEditor() {
@@ -1375,7 +1386,7 @@ async function deleteRequirement(project, requirement) {
 
 async function addStageToRequirement(requirement) {
   const today = formatDate(new Date());
-  const stage = createStage("新阶段", STAGE_TYPES[0], today, addDays(today, 2));
+  const stage = createStage("新阶段", "新阶段", today, addDays(today, 2));
   const project = getActiveProjects().find((item) => item.requirements.includes(requirement));
   if (!project) return;
   const payload = await commitResource(`/api/projects/${encodeURIComponent(project.id)}/requirements/${encodeURIComponent(requirement.id)}/stages`, {
@@ -1407,7 +1418,7 @@ function createStage(title, type, start, end) {
 }
 
 async function createStageFromGrid(project, requirement, start) {
-  const stage = createStage("新任务", STAGE_TYPES[0], start, twoWorkdayEnd(start));
+  const stage = createStage("新任务", "新任务", start, twoWorkdayEnd(start));
   const payload = await commitResource(`/api/projects/${encodeURIComponent(project.id)}/requirements/${encodeURIComponent(requirement.id)}/stages`, {
     ...stage,
     requirementVersion: requirement.version
@@ -1519,7 +1530,7 @@ function escapeHtml(value) {
 els.editType.addEventListener("change", () => {
   if (editing?.kind !== "stage") return;
   const nextType = els.editType.value;
-  els.editorTitle.textContent = `${editing.requirement.title} / ${nextType}`;
+  els.editorTitle.textContent = `${editing.requirement.title} / ${nextType === CUSTOM_STAGE_TYPE ? "自定义" : nextType}`;
 });
 
 els.addProjectBtn?.addEventListener("click", addProject);
@@ -1540,10 +1551,10 @@ els.saveBtn.addEventListener("click", async () => {
 });
 els.shutdownBtn?.addEventListener("click", shutdownServer);
 els.editorForm.addEventListener("submit", (event) => {
-  if (event.submitter?.value === "cancel") return;
   event.preventDefault();
   saveEditor();
 });
+els.closeEditorBtn.addEventListener("click", () => els.dialog.close());
 els.dialog.addEventListener("close", () => {
   editing = null;
 });

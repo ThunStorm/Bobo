@@ -71,7 +71,7 @@
           <h2 id="editorTitle">编辑阶段</h2>
           <div class="editor-head-actions">
             <button id="deleteEditorBtn" class="danger editor-delete" value="delete" type="button">删除</button>
-            <button class="icon-button" value="cancel" aria-label="关闭" type="submit">×</button>
+            <button id="closeEditorBtn" class="icon-button" aria-label="关闭" type="button">×</button>
           </div>
         </div>
         <div id="editorTabs" class="editor-tabs" hidden>
@@ -84,7 +84,7 @@
             <label class="field" data-stage-field>阶段<select id="editType"></select></label>
             <label class="field" data-stage-field>开始<input id="editStart" type="date" required></label>
             <label class="field" data-stage-field>结束<input id="editEnd" type="date" required></label>
-            <label class="field" data-stage-field>负责人<input id="editOwner"></label>
+            <label class="field" data-stage-field>负责人<input id="editOwner" list="editOwnerOptions" autocomplete="off"><datalist id="editOwnerOptions"></datalist></label>
             <label class="field" data-stage-field>工时<input id="editHours" type="number" min="0" step="0.5"></label>
             <label class="field" data-stage-field>状态
               <select id="editStatus">
@@ -144,7 +144,6 @@
         </section>
         <menu class="editor-actions">
           <span></span>
-          <button value="cancel" type="submit">取消</button>
           <button id="saveEditorBtn" value="default" type="button">保存阶段</button>
         </menu>
       </form>
