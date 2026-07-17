@@ -442,9 +442,12 @@ test("avatar login enforces system access and preserves deleted user history", a
 
     const choices = await request(context, "/api/auth/choices");
     assert.equal(choices.response.status, 200);
+    assert.equal(choices.payload.systems.length, 2);
+    assert.ok(choices.payload.systems.every((system) => Object.keys(system).sort().join(",") === "id,name"));
     assert.equal(choices.payload.users.length, 1);
     assert.equal(choices.payload.users[0].avatarText, "负");
     assert.equal(choices.payload.users[0].requiresPassword, true);
+    assert.deepEqual(choices.payload.users[0].systemIds, []);
     assert.equal(Object.hasOwn(choices.payload.users[0], "username"), false);
 
     const systemsResponse = await request(context, "/api/systems", { cookie: adminCookie });
@@ -463,6 +466,10 @@ test("avatar login enforces system access and preserves deleted user history", a
     });
     assert.equal(memberBResponse.response.status, 201);
     const memberB = memberBResponse.payload.user;
+
+    const groupedChoices = await request(context, "/api/auth/choices");
+    assert.deepEqual(groupedChoices.payload.users.find((user) => user.id === memberA.id).systemIds, [systemA.id]);
+    assert.deepEqual(groupedChoices.payload.users.find((user) => user.id === memberB.id).systemIds, [systemB.id]);
 
     const memberLogin = await request(context, "/api/auth/select", {
       method: "POST",

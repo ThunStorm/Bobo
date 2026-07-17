@@ -44,14 +44,32 @@
     enterWorkspace();
   }
 
-  function renderChoices(users) {
-    dom.users.innerHTML = users.map((user) => `
-      <button class="login-user" type="button" data-user-id="${user.id}">
-        <span class="login-avatar">${escapeHtml(user.avatarText)}</span>
-        <span class="login-user-name">${escapeHtml(user.displayName)}</span>
-        <span class="login-user-kind">${user.requiresPassword ? "管理员 · 需密码" : "点击进入"}</span>
-      </button>
-    `).join("");
+  function renderChoices(users, systems) {
+    const members = users.filter((user) => !user.requiresPassword);
+    const groups = systems.map((system) => ({
+      name: system.name,
+      users: members.filter((user) => user.systemIds?.includes(system.id))
+    })).filter((group) => group.users.length);
+    const ungrouped = members.filter((user) => !(user.systemIds || []).some((id) => systems.some((system) => system.id === id)));
+    const admins = users.filter((user) => user.requiresPassword);
+    if (ungrouped.length) groups.push({ name: "其他账户", users: ungrouped });
+    if (admins.length) groups.push({ name: "管理员", users: admins });
+
+    dom.users.innerHTML = groups.length ? groups.map((group, index) => `
+      <details class="login-group" ${index === 0 ? "open" : ""}>
+        <summary><span>${escapeHtml(group.name)}</span><small>${group.users.length} 人</small></summary>
+        <div class="login-group-users">
+          ${group.users.map((user) => `
+            <button class="login-user" type="button" data-user-id="${escapeHtml(user.id)}">
+              <span class="login-avatar">${escapeHtml(user.avatarText)}</span>
+              <span class="login-user-name">${escapeHtml(user.displayName)}</span>
+              <span class="login-user-kind">${user.requiresPassword ? "管理员 · 需密码" : "点击进入"}</span>
+            </button>
+          `).join("")}
+        </div>
+      </details>
+    `).join("") : '<p class="login-empty">暂无可登录账户，请联系管理员。</p>';
+
     dom.users.querySelectorAll("[data-user-id]").forEach((button) => {
       button.addEventListener("click", async () => {
         const user = users.find((item) => item.id === button.dataset.userId);
@@ -143,7 +161,7 @@
       return;
     }
     dom.chooser.hidden = false;
-    renderChoices(payload.users || []);
+    renderChoices(payload.users || [], payload.systems || []);
   }
 
   init().catch((error) => {

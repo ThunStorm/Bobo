@@ -182,7 +182,8 @@ async function routeApi(req, res, url) {
   }
 
   if (url.pathname === "/api/auth/choices" && req.method === "GET") {
-    sendJson(res, 200, { needsSetup: auth.needsSetup(), users: auth.loginChoices() });
+    const systems = store.composeState().systems.map(({ id, name }) => ({ id, name }));
+    sendJson(res, 200, { needsSetup: auth.needsSetup(), systems, users: auth.loginChoices() });
     return true;
   }
 
