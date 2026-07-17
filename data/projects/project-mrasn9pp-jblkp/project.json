@@ -1,0 +1,153 @@
+{
+  "id": "project-mrasn9pp-jblkp",
+  "systemId": "system-a",
+  "name": "Project 3",
+  "version": 1,
+  "milestones": [],
+  "dateMarkers": [
+    {
+      "id": "marker-mrasrd7b-bexan",
+      "date": "2026-07-07",
+      "label": "项目会议",
+      "type": "custom",
+      "color": "blue",
+      "notes": ""
+    }
+  ],
+  "requirements": [
+    {
+      "id": "req-mrbg9fh8-kn2i2",
+      "title": "Demand 3.1",
+      "version": 1,
+      "stages": [
+        {
+          "id": "stage-mrbg9fh8-yd6dl",
+          "type": "需求澄清",
+          "title": "需求澄清",
+          "start": "2026-07-08",
+          "end": "2026-07-09",
+          "owner": "",
+          "hours": 0,
+          "status": "未开始",
+          "notes": "",
+          "version": 1
+        },
+        {
+          "id": "stage-mrbg9fh8-xfpnt",
+          "type": "工作量及商务",
+          "title": "工作量及商务",
+          "start": "2026-07-10",
+          "end": "2026-07-11",
+          "owner": "",
+          "hours": 0,
+          "status": "未开始",
+          "notes": "",
+          "version": 1
+        },
+        {
+          "id": "stage-mrbg9fh8-yuuww",
+          "type": "功能开发",
+          "title": "功能开发",
+          "start": "2026-07-12",
+          "end": "2026-07-13",
+          "owner": "",
+          "hours": 0,
+          "status": "未开始",
+          "notes": "",
+          "version": 1
+        },
+        {
+          "id": "stage-mrbg9fh8-lt4mo",
+          "type": "技术测试",
+          "title": "技术测试",
+          "start": "2026-07-14",
+          "end": "2026-07-15",
+          "owner": "",
+          "hours": 0,
+          "status": "未开始",
+          "notes": "",
+          "version": 1
+        },
+        {
+          "id": "stage-mrbg9fh8-dlh2f",
+          "type": "业务测试",
+          "title": "业务测试",
+          "start": "2026-07-16",
+          "end": "2026-07-17",
+          "owner": "",
+          "hours": 0,
+          "status": "未开始",
+          "notes": "",
+          "version": 1
+        }
+      ]
+    },
+    {
+      "id": "req-mrbk18ly-mllkm",
+      "title": "Demand 3.2",
+      "version": 1,
+      "stages": [
+        {
+          "id": "stage-mrbk18ly-k5li4",
+          "type": "需求澄清",
+          "title": "需求澄清",
+          "start": "2026-07-08",
+          "end": "2026-07-09",
+          "owner": "",
+          "hours": 0,
+          "status": "未开始",
+          "notes": "",
+          "version": 1
+        },
+        {
+          "id": "stage-mrbk18ly-8e88d",
+          "type": "工作量及商务",
+          "title": "工作量及商务",
+          "start": "2026-07-10",
+          "end": "2026-07-11",
+          "owner": "",
+          "hours": 0,
+          "status": "未开始",
+          "notes": "",
+          "version": 1
+        },
+        {
+          "id": "stage-mrbk18ly-89p9q",
+          "type": "功能开发",
+          "title": "功能开发",
+          "start": "2026-07-12",
+          "end": "2026-07-13",
+          "owner": "",
+          "hours": 0,
+          "status": "未开始",
+          "notes": "",
+          "version": 1
+        },
+        {
+          "id": "stage-mrbk18ly-w9bnc",
+          "type": "技术测试",
+          "title": "技术测试",
+          "start": "2026-07-14",
+          "end": "2026-07-15",
+          "owner": "",
+          "hours": 0,
+          "status": "未开始",
+          "notes": "",
+          "version": 1
+        },
+        {
+          "id": "stage-mrbk18ly-s116u",
+          "type": "业务测试",
+          "title": "业务测试",
+          "start": "2026-07-16",
+          "end": "2026-07-17",
+          "owner": "",
+          "hours": 0,
+          "status": "未开始",
+          "notes": "",
+          "version": 1
+        }
+      ]
+    }
+  ]
+}

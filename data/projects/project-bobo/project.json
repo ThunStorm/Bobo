@@ -1,0 +1,124 @@
+{
+  "id": "project-bobo",
+  "systemId": "system-a",
+  "name": "BOBO Studio项目",
+  "version": 1,
+  "milestones": [
+    {
+      "id": "milestone-alpha",
+      "date": "2026-07-15",
+      "label": "内测版"
+    },
+    {
+      "id": "milestone-demo",
+      "date": "2026-07-31",
+      "label": "演示版"
+    }
+  ],
+  "dateMarkers": [],
+  "requirements": [
+    {
+      "id": "req-gantt",
+      "title": "甘特图需求",
+      "version": 1,
+      "stages": [
+        {
+          "id": "stage-clarify",
+          "type": "需求澄清",
+          "title": "确认层级、节点、编辑字段",
+          "start": "2026-07-07",
+          "end": "2026-07-09",
+          "owner": "产品",
+          "hours": 8,
+          "status": "进行中",
+          "notes": "先按项目-需求-阶段三层实现。",
+          "version": 1
+        },
+        {
+          "id": "stage-estimate",
+          "type": "工作量评估",
+          "title": "评估前后端和本地存储",
+          "start": "2026-07-10",
+          "end": "2026-07-11",
+          "owner": "技术",
+          "hours": 12,
+          "status": "未开始",
+          "notes": "",
+          "version": 1
+        },
+        {
+          "id": "stage-dev",
+          "type": "功能N-开发",
+          "title": "折叠、悬浮、双击编辑",
+          "start": "2026-07-12",
+          "end": "2026-07-20",
+          "owner": "开发",
+          "hours": 40,
+          "status": "未开始",
+          "notes": "",
+          "version": 1
+        },
+        {
+          "id": "stage-tech-test",
+          "type": "技术测试",
+          "title": "多终端访问和 JSON 持久化验证",
+          "start": "2026-07-21",
+          "end": "2026-07-24",
+          "owner": "测试",
+          "hours": 16,
+          "status": "未开始",
+          "notes": "",
+          "version": 1
+        },
+        {
+          "id": "stage-mranzreb-y2m4j",
+          "type": "需求澄清",
+          "title": "新阶段",
+          "start": "2026-07-07",
+          "end": "2026-07-09",
+          "owner": "",
+          "hours": 0,
+          "status": "未开始",
+          "notes": "",
+          "version": 1
+        },
+        {
+          "id": "stage-biz-test",
+          "type": "业务测试",
+          "title": "实际项目数据试填",
+          "start": "2026-07-25",
+          "end": "2026-07-31",
+          "owner": "业务",
+          "hours": 24,
+          "status": "未开始",
+          "notes": "",
+          "version": 1
+        },
+        {
+          "id": "stage-mrbjm962-9fupo",
+          "type": "需求澄清",
+          "title": "新任务",
+          "start": "2026-07-16",
+          "end": "2026-07-17",
+          "owner": "",
+          "hours": 0,
+          "status": "暂停",
+          "notes": "",
+          "version": 1
+        },
+        {
+          "id": "stage-mrbjml7l-mraco",
+          "type": "需求澄清",
+          "title": "新任务",
+          "start": "2026-07-28",
+          "end": "2026-07-29",
+          "owner": "",
+          "hours": 0,
+          "status": "未开始",
+          "notes": "",
+          "version": 1
+        }
+      ]
+    }
+  ]
+}
