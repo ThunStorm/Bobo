@@ -492,12 +492,21 @@ async function route(req, res) {
 }
 
 function openBrowser(url) {
+  let child;
   if (process.platform === "win32") {
-    spawn("cmd", ["/c", "start", "", url], {
+    child = spawn("cmd", ["/c", "start", "", url], {
       detached: true,
       stdio: "ignore",
       windowsHide: true
-    }).unref();
+    });
+  } else if (process.platform === "darwin") {
+    child = spawn("open", [url], { detached: true, stdio: "ignore" });
+  }
+  if (child) {
+    const warn = () => console.warn(`无法自动打开浏览器，请手动访问 ${url}`);
+    child.on("error", warn);
+    child.on("exit", (code) => { if (code !== null && code !== 0) warn(); });
+    child.unref();
   }
 }
 
@@ -533,13 +542,10 @@ const server = http.createServer((req, res) => {
   });
 });
 
-  server.on("error", (error) => {
+server.on("error", (error) => {
   if (error.code === "EADDRINUSE") {
-    const localUrl = `http://localhost:${port}`;
-    console.log(`Bobo is already running on port ${port}.`);
-    console.log(`Opening existing app at ${localUrl}`);
-    if (shouldOpen) openBrowser(localUrl);
-    process.exit(0);
+    console.error(`端口 ${port} 已被占用，Bobo 未启动。请关闭原服务或设置其他 PORT 后重试。`);
+    process.exit(1);
   }
   console.error(`Bobo failed to start: ${error.message}`);
   process.exit(1);
