@@ -93,7 +93,7 @@
 
   async function api(url, options = {}) {
     const headers = { ...(options.headers || {}) };
-    if (options.body && typeof options.body !== "string") {
+    if (options.body && typeof options.body !== "string" && !(options.body instanceof Blob)) {
       headers["Content-Type"] = "application/json";
       options.body = JSON.stringify(options.body);
     }
@@ -529,7 +529,8 @@
     });
     dom.editorDetailsPanel.hidden = name !== "details";
     dom.editorIssuesPanel.hidden = name !== "issues";
-    dom.editorActions.hidden = name === "issues";
+    document.querySelector("#editorAttachmentsPanel").hidden = name !== "attachments";
+    dom.editorActions.hidden = name !== "details";
   }
 
   dom.editorTabs.querySelectorAll(".editor-tab").forEach((button) => {
@@ -744,14 +745,14 @@
       try {
         const meta = await api("/api/revision");
         if (Number(meta.revision) === revision) return;
-        if (dom.editorDialog.open || dom.usersDialog.open) {
+        if (document.querySelector("dialog[open], .stage-row.inline-editing")) {
           dom.syncNotice.hidden = false;
           dom.syncNotice.textContent = "有其他用户更新了数据，关闭弹窗后刷新";
           return;
         }
-        revision = Number(meta.revision);
         dom.syncNotice.hidden = true;
         await onExternalChange?.();
+        revision = Math.max(revision, Number(meta.revision));
       } catch (error) {
         if (error.status === 401) location.replace("/login.html");
       }

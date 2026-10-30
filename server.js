@@ -5,15 +5,21 @@ const path = require("node:path");
 const { spawn } = require("node:child_process");
 const { createDataStore } = require("./lib/data-store");
 const { createAuth } = require("./lib/auth");
+const { acquireDataLock } = require("./lib/data-lock");
+const { sourceFingerprint, runtimeDiagnostics } = require("./lib/diagnostics");
 
 const rootDir = __dirname;
 const publicDir = path.join(rootDir, "public");
+const runtimeStarted = { at: new Date().toISOString(), source: sourceFingerprint(rootDir) };
 const dataDir = process.env.BOBO_DATA_DIR ? path.resolve(process.env.BOBO_DATA_DIR) : path.join(rootDir, "data");
 const port = Number(process.env.PORT || 4177);
 const host = process.env.HOST || "0.0.0.0";
 const shouldOpen = !process.argv.includes("--no-open");
+const releaseDataLock = acquireDataLock(dataDir);
+process.once("exit", releaseDataLock);
 const store = createDataStore(dataDir);
 const auth = createAuth(store);
+try { store.cleanupAttachments(); } catch (error) { console.error(`附件启动清理失败：${error.message}`); }
 
 const contentTypes = {
   ".html": "text/html; charset=utf-8",
@@ -58,6 +64,22 @@ function readBody(req) {
   });
 }
 
+function readAttachmentBody(req) {
+  return new Promise((resolve, reject) => {
+    const chunks = []; let size = 0; let oversized = false;
+    req.on('data', chunk => {
+      size += chunk.length;
+      if (size > 50 * 1024 * 1024) {
+        if (!oversized) { const error = new Error('单个附件最大 50 MiB'); error.code = 'PAYLOAD_TOO_LARGE'; reject(error); }
+        oversized = true; chunks.length = 0;
+      } else if (!oversized) chunks.push(chunk);
+    });
+    req.on('end', () => { if (!oversized) resolve(Buffer.concat(chunks)); });
+    req.on('error', reject);
+    req.on('aborted', () => reject(new Error('附件上传已中断')));
+  });
+}
+
 function isLocalRequest(req) {
   const address = req.socket.remoteAddress;
   return address === "127.0.0.1" || address === "::1" || address === "::ffff:127.0.0.1";
@@ -78,6 +100,7 @@ function notFound(message) {
 }
 
 function statusForError(error) {
+  if (error.code === "PAYLOAD_TOO_LARGE") return 413;
   if (error.code === "AUTH_FAILED") return 401;
   if (error.code === "FORBIDDEN") return 403;
   if (error.code === "NOT_FOUND") return 404;
@@ -240,6 +263,12 @@ async function routeApi(req, res, url) {
     return true;
   }
 
+  if (url.pathname === "/api/admin/diagnostics" && req.method === "GET") {
+    assertAdmin(user);
+    sendJson(res, 200, runtimeDiagnostics(rootDir, dataDir, runtimeStarted));
+    return true;
+  }
+
   if (url.pathname === "/api/bootstrap" && req.method === "GET") {
     sendJson(res, 200, publicBootstrap(user));
     return true;
@@ -382,6 +411,27 @@ async function routeApi(req, res, url) {
     input.actorUserId = user.id;
     sendJson(res, 201, resourcePayload(user, store.createStage(projectId, requirementId, input)));
     return true;
+  }
+
+  const attachmentMatch = url.pathname.match(/^\/api\/projects\/([^/]+)\/requirements\/([^/]+)\/stages\/([^/]+)\/attachments(?:\/([^/]+))?$/);
+  if (attachmentMatch) {
+    const [projectId, requirementId, stageId, attachmentId] = attachmentMatch.slice(1).map(value => value == null ? null : decodeURIComponent(value));
+    projectContext(user, projectId);
+    if (!attachmentId && req.method === 'GET') {
+      sendJson(res, 200, store.listAttachments(projectId, requirementId, stageId)); return true;
+    }
+    if (!attachmentId && req.method === 'POST') {
+      // Check existence and access before receiving the body, then check again after it arrives.
+      store.listAttachments(projectId, requirementId, stageId);
+      const buffer = await readAttachmentBody(req);
+      projectContext(user, projectId);
+      sendJson(res, 201, resourcePayload(user, store.addAttachment(projectId, requirementId, stageId, { filename: decodeURIComponent(req.headers['x-file-name'] || ''), version: req.headers['x-stage-version'] }, buffer, user.id))); return true;
+    }
+    if (attachmentId && req.method === 'GET') {
+      const { record, file } = store.getAttachment(projectId, requirementId, stageId, attachmentId);
+      const buffer = fs.readFileSync(file);
+      send(res, 200, buffer, { 'Content-Type': 'application/octet-stream', 'Content-Length': buffer.length, 'Content-Disposition': `attachment; filename="download"; filename*=UTF-8''${encodeURIComponent(record.filename).replace(/['()*]/g, char => '%' + char.charCodeAt(0).toString(16))}`, 'X-Content-Type-Options': 'nosniff' }); return true;
+    }
   }
 
   const stageMatch = url.pathname.match(/^\/api\/projects\/([^/]+)\/requirements\/([^/]+)\/stages\/([^/]+)$/);
@@ -551,8 +601,12 @@ server.on("error", (error) => {
   process.exit(1);
 });
 
+process.once("SIGINT", shutdownServer);
+process.once("SIGTERM", shutdownServer);
+
 server.listen(port, host, () => {
   const localUrl = `http://localhost:${port}`;
   printStartupUrls(localUrl);
+  console.log(`Bobo source: ${runtimeStarted.source.id} | PID: ${process.pid} | data: ${dataDir}`);
   if (shouldOpen) openBrowser(localUrl);
 });

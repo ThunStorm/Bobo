@@ -6,3 +6,9 @@ data/backups/
 data/projects.json.migrated
 .tmp-multiuser-smoke/
 test/.tmp-*/
+# Uploaded files and retention audit logs
+data/attachments/
+data/logs/
+data/.bobo-data.lock/
+data-full-backups/
+/bobo-diagnostics*.json

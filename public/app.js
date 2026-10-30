@@ -39,6 +39,9 @@ const els = {
   editIssues: document.querySelector("#editIssues"),
   editNotes: document.querySelector("#editNotes"),
   saveEditorBtn: document.querySelector("#saveEditorBtn"),
+  completeRequirementBtn: document.querySelector("#completeRequirementBtn"),
+  projectRequirementOrder: document.querySelector("#projectRequirementOrder"),
+  requirementOrderList: document.querySelector("#requirementOrderList"),
   deleteEditorBtn: document.querySelector("#deleteEditorBtn")
 };
 
@@ -346,6 +349,7 @@ async function patchResource(url, body, options = {}) {
     normalizeState();
     if (options.refit) fitDates();
     const payload = await BoboCollab.saveResource(state, url, { method: "PATCH", body });
+    if (options.refit) fitDates();
     flashSaveStatus();
     if (options.rerender !== false) render();
     return payload;
@@ -358,7 +362,7 @@ async function patchResource(url, body, options = {}) {
         return null;
       }
       if (choice === "retry") {
-        const retryBody = { ...body };
+        const retryBody = options.rebase ? options.rebase(error.payload.entity, body) : { ...body };
         const versionKey = error.payload.versionField || "version";
         if (versionKey && error.payload.entity?.version != null) retryBody[versionKey] = error.payload.entity.version;
         return patchResource(url, retryBody, { ...options, allowRetry: false });
@@ -406,7 +410,7 @@ function getAllStages() {
 
 function getDateRange() {
   const dates = [];
-  for (const { stage } of getAllStages()) dates.push(stage.start, stage.end);
+  for (const { stage } of getAllStages()) for (const occurrence of stageOccurrences(stage)) dates.push(occurrence.start, occurrence.end);
   for (const marker of collectDateMarkers()) dates.push(marker.date);
   if (!dates.length) {
     const today = formatDate(new Date());
@@ -455,7 +459,7 @@ function collectDateMarkers() {
       });
     }
   }
-  return markers;
+  return markers.flatMap(marker => BoboRecurrence.occurrences(marker.date, marker.date, marker.recurrence).map(item => ({ ...marker, date: item.start })));
 }
 
 function markerMap() {
@@ -488,7 +492,7 @@ function render() {
   for (const project of projects) {
     els.gantt.append(renderProjectRow(project));
     if (!project.expanded) continue;
-    for (const requirement of project.requirements) {
+    for (const requirement of orderedRequirements(project)) {
       els.gantt.append(renderRequirementRow(project, requirement));
       if (!requirement.expanded) continue;
       for (const stage of requirement.stages) {
@@ -769,13 +773,20 @@ function renderProjectRow(project) {
   return row;
 }
 
+function orderedRequirements(project) {
+  return [...project.requirements.filter(item => !item.completed), ...project.requirements.filter(item => item.completed)];
+}
+
 function renderRequirementRow(project, requirement) {
   const row = rowEl(`requirement-row ${requirement.expanded ? "expanded" : ""} ${project.id === state.selectedProjectId ? "selected-context" : ""}`);
   const label = document.createElement("div");
+  row.classList.toggle("requirement-completed", requirement.completed === true);
   label.className = "label-cell requirement-label";
   const title = document.createElement("input");
   title.className = "requirement-name-input";
   title.value = requirement.title;
+  title.title = requirement.completed ? `${requirement.title}（已完成）` : requirement.title;
+  title.setAttribute("aria-label", title.title);
   title.disabled = editingRequirementNameId !== requirement.id;
   title.addEventListener("keydown", async (event) => {
     if (event.key === "Enter") await saveInlineRequirementName(requirement, title);
@@ -809,6 +820,7 @@ function renderRequirementRow(project, requirement) {
 function renderStageRow(project, requirement, stage) {
   const row = rowEl("stage-row");
   row.dataset.stageId = stage.id;
+  row.classList.toggle("inline-editing", editingStageNameId === stage.id);
   const label = document.createElement("div");
   label.className = "label-cell stage-label";
 
@@ -824,11 +836,17 @@ function renderStageRow(project, requirement, stage) {
     if (event.dataTransfer) {
       event.dataTransfer.effectAllowed = "move";
       event.dataTransfer.setData("text/plain", stage.id);
+      const rect = row.getBoundingClientRect();
+      event.dataTransfer.setDragImage(row, event.clientX - rect.left, event.clientY - rect.top);
     }
+    requestAnimationFrame(() => {
+      if (draggedStage?.stage === stage) row.classList.add("dragging");
+    });
   });
   drag.addEventListener("dragend", () => {
     draggedStage = null;
     clearStageDropIndicators();
+    document.querySelectorAll(".stage-row.dragging").forEach(item => item.classList.remove("dragging"));
   });
 
   const title = document.createElement("input");
@@ -836,7 +854,11 @@ function renderStageRow(project, requirement, stage) {
   title.value = stage.type;
   title.disabled = editingStageNameId !== stage.id;
   title.addEventListener("keydown", async (event) => {
-    if (event.key === "Enter") await saveInlineStageName(stage, title);
+    if (event.key === "Enter") {
+      event.preventDefault();
+      if (title.value.trim()) await commitName();
+      else edit.focus();
+    }
     if (event.key === "Escape") {
       editingStageNameId = "";
       render();
@@ -846,13 +868,36 @@ function renderStageRow(project, requirement, stage) {
   const edit = iconButton(editingStageNameId === stage.id ? "保存阶段名称" : "编辑阶段名称", editingStageNameId === stage.id ? "✓" : "✎", async (event) => {
     event.stopPropagation();
     if (editingStageNameId === stage.id) {
-      await saveInlineStageName(stage, title);
+      await commitName();
     } else {
       editingStageNameId = stage.id;
       render();
       document.querySelector(`[data-stage-id="${stage.id}"] .stage-name-input`)?.focus();
     }
   });
+  let savingName = false;
+  function updateNameAction() {
+    const deleting = editingStageNameId === stage.id && !title.value.trim();
+    const label = deleting ? (BoboCollab.isAdmin() ? "删除当前阶段" : "仅管理员可删除阶段") : editingStageNameId === stage.id ? "保存阶段名称" : "编辑阶段名称";
+    edit.textContent = deleting ? "×" : editingStageNameId === stage.id ? "✓" : "✎";
+    edit.title = label;
+    edit.setAttribute("aria-label", label);
+    edit.classList.toggle("stage-delete-action", deleting);
+    edit.disabled = savingName || (deleting && !BoboCollab.isAdmin());
+  }
+  async function commitName() {
+    if (savingName) return;
+    savingName = true;
+    title.disabled = true;
+    updateNameAction();
+    try { await saveInlineStageName(stage, title); }
+    finally {
+      savingName = false;
+      if (title.isConnected) { title.disabled = false; updateNameAction(); }
+    }
+  }
+  title.addEventListener("input", updateNameAction);
+  updateNameAction();
 
   label.append(drag, title, edit);
   row.append(label);
@@ -870,36 +915,54 @@ function renderStageRow(project, requirement, stage) {
   });
 
   const viewEndOffset = daysBetween(view.start, view.end);
-  const stageStart = daysBetween(view.start, stage.start);
-  const stageEnd = daysBetween(view.start, stage.end);
-  const start = Math.max(0, stageStart);
-  const end = Math.min(viewEndOffset, stageEnd);
-  if (end >= 0 && start <= viewEndOffset) {
-    const bar = document.createElement("div");
-    const visualState = getStageVisualState(stage);
-    bar.className = `stage-bar ${stage.issueOpen ? "issue" : ""}`;
-    bar.dataset.status = stage.status;
-    bar.dataset.visualState = visualState;
-    bar.style.gridColumn = `${start + 1} / ${end + 2}`;
-    const issueState = stage.issueOpen ? "open" : "resolved";
-    const issueLabel = stage.issueOpen ? "存在未解决问题" : "问题已全部解决";
-    bar.innerHTML = `<span class="stage-issue-dot ${issueState}" role="img" aria-label="${issueLabel}" title="${issueLabel}"></span><span class="stage-bar-title">${escapeHtml(stage.title)}</span>`;
-    bar.addEventListener("mouseenter", (event) => showTooltip(event, project, requirement, stage));
-    bar.addEventListener("mousemove", moveTooltip);
-    bar.addEventListener("mouseleave", hideTooltip);
-    bar.addEventListener("dblclick", () => openStageEditor(project, requirement, stage));
-    grid.append(bar);
+  const laneEnds = [];
+  for (const occurrence of stageOccurrences(stage)) {
+    const stageStart = daysBetween(view.start, occurrence.start);
+    const stageEnd = daysBetween(view.start, occurrence.end);
+    const start = Math.max(0, stageStart);
+    const end = Math.min(viewEndOffset, stageEnd);
+    if (end >= 0 && start <= viewEndOffset) {
+      const bar = document.createElement("div");
+      const visualState = getStageVisualState({ ...stage, ...occurrence });
+      bar.className = `stage-bar ${stage.issueOpen ? "issue" : ""}`;
+      bar.dataset.status = stage.status;
+      bar.dataset.visualState = visualState;
+      let lane = laneEnds.findIndex(last => last < start);
+      if (lane < 0) lane = laneEnds.length;
+      laneEnds[lane] = end;
+      bar.style.gridRow = String(lane + 1);
+      bar.title = `${stage.title} · ${occurrence.start} 至 ${occurrence.end}${stage.recurrence ? " · 双击编辑整个重复系列" : ""}`;
+      bar.style.gridColumn = `${start + 1} / ${end + 2}`;
+      const issueState = stage.issueOpen ? "open" : "resolved";
+      const issueLabel = stage.issueOpen ? "存在未解决问题" : "问题已全部解决";
+      bar.innerHTML = `<span class="stage-issue-dot ${issueState}" role="img" aria-label="${issueLabel}" title="${issueLabel}"></span><span class="stage-bar-title">${escapeHtml(stage.title)}</span>`;
+      bar.addEventListener("mouseenter", (event) => showTooltip(event, project, requirement, { ...stage, ...occurrence }));
+      bar.addEventListener("mousemove", moveTooltip);
+      bar.addEventListener("mouseleave", hideTooltip);
+      bar.addEventListener("dblclick", () => openStageEditor(project, requirement, stage));
+      grid.append(bar);
+    }
   }
+  if (laneEnds.length > 1) { grid.style.gridAutoRows = "32px"; grid.style.paddingBlock = "4px"; }
   row.append(grid);
   return row;
 }
 
 async function saveInlineStageName(stage, input) {
   const value = input.value.trim();
-  if (!value) return;
   const project = getActiveProjects().find((item) => item.requirements.some((requirement) => requirement.stages.includes(stage)));
   const requirement = project?.requirements.find((item) => item.stages.includes(stage));
   if (!project || !requirement) return;
+  if (!value) {
+    if (!BoboCollab.isAdmin()) return;
+    const issueCount = (project.issues || []).filter(issue => issue.stageId === stage.id).length;
+    if (!confirm(`确定删除阶段「${stage.title || stage.type}」吗？${issueCount ? `\n将同时删除 ${issueCount} 个关联问题及其评论。` : ""}\n此操作不可撤销。`)) return;
+    const payload = await deleteResource(`/api/projects/${encodeURIComponent(project.id)}/requirements/${encodeURIComponent(requirement.id)}/stages/${encodeURIComponent(stage.id)}`, {
+      requirementVersion: requirement.version, version: stage.version
+    }, { refit: true, rerender: false });
+    if (payload) { editingStageNameId = ""; render(); }
+    return;
+  }
   const title = isCustomStageType(value) ? value : (!stage.title || STAGE_TYPES.includes(stage.title) ? value : stage.title);
   const payload = await patchResource(`/api/projects/${encodeURIComponent(project.id)}/requirements/${encodeURIComponent(requirement.id)}/stages/${encodeURIComponent(stage.id)}`, {
     type: value,
@@ -958,6 +1021,7 @@ async function handleStageDrop(event, requirement, stage, row) {
   clearStageDropIndicators();
   const sourceStage = draggedStage.stage;
   draggedStage = null;
+  document.querySelectorAll(".stage-row.dragging").forEach(item => item.classList.remove("dragging"));
   await moveStage(requirement, sourceStage, stage, placement);
 }
 
@@ -1051,9 +1115,11 @@ function renderMarkerList() {
     row.className = `marker-item marker-${item.marker.color || "blue"}`;
     const text = document.createElement("span");
     text.title = item.marker.notes || "";
-    text.textContent = `${item.marker.date} ${item.marker.label} · ${MARKER_COLORS[item.marker.color] || "默认"} · ${item.scope}`;
+    text.textContent = `${item.marker.label} · ${item.scope} · ${item.marker.date}${item.marker.recurrence ? `～${item.marker.recurrence.until} ${recurrenceSummary(item.marker.recurrence)}` : ""} · ${MARKER_COLORS[item.marker.color] || "默认"}`;
     const remove = iconButton("删除日期标记", "×", async () => deleteDateMarker(item.owner, item.marker), "danger-icon");
-    row.append(text, remove);
+    const edit = iconButton("编辑日期标记", "✎", () => openMarkerEditor(item.owner, item.marker));
+    text.title = text.textContent + (item.marker.notes ? `\n${item.marker.notes}` : "");
+    row.append(text, edit, remove);
     els.markerList.append(row);
   }
 }
@@ -1105,6 +1171,7 @@ function showTooltip(event, project, requirement, stage) {
     <strong>${escapeHtml(stage.title)}</strong>
     <div>${escapeHtml(project.name)} / ${escapeHtml(requirement.title)}</div>
     <div>${stage.start} 至 ${stage.end}</div>
+    ${stage.recurrence ? `<div>重复：${escapeHtml(recurrenceSummary(stage.recurrence))}，截止 ${stage.recurrence.until}（整个系列共享状态）</div>` : ""}
     <div>负责人：${escapeHtml(stage.owner || "未分配")} · 工时：${Number(stage.hours || 0)}</div>
     <div>状态：${escapeHtml(stage.status)} · 视觉：${escapeHtml(getStageVisualLabel(visualState))} · 问题：${stage.issueOpen ? "未关闭" : "已关闭"}</div>
     ${stage.issues ? `<div>问题说明：${escapeHtml(stage.issues)}</div>` : ""}
@@ -1141,8 +1208,16 @@ function renderStageOwnerOptions(project) {
 
 function setEditorMode(kind) {
   const stageMode = kind === "stage";
+  els.completeRequirementBtn.hidden = kind !== "requirement";
+  els.completeRequirementBtn.disabled = false;
+  els.saveEditorBtn.disabled = false;
+  els.saveEditorBtn.textContent = kind === "project" ? "保存项目" : kind === "requirement" ? "保存需求" : "保存阶段";
+  els.projectRequirementOrder.hidden = kind !== "project";
+  BoboAttachments.reset();
   BoboCollab.resetEditor(kind);
   els.editorGrid?.classList.toggle("compact", !stageMode);
+  stageRepeat.element.hidden = !stageMode;
+  stageRepeat.element.querySelectorAll("input, select").forEach(control => { control.disabled = !stageMode; });
   els.editTitleLabel.textContent = kind === "project" ? "项目名称" : kind === "requirement" ? "需求名称" : "标题";
 
   for (const control of [els.editType, els.editStart, els.editEnd, els.editOwner, els.editHours, els.editStatus, els.editIssueOpen, els.editIssues, els.editNotes]) {
@@ -1151,11 +1226,12 @@ function setEditorMode(kind) {
 }
 
 function openProjectEditor(project) {
-  editing = { kind: "project", project };
+  editing = { kind: "project", project, requirementIds: orderedRequirements(project).map(item => item.id) };
   state.selectedProjectId = project.id;
   setEditorMode("project");
   els.editorTitle.textContent = `编辑项目 / ${project.name}`;
   els.editTitle.value = project.name || "";
+  renderRequirementOrder();
   els.dialog.showModal();
   els.editTitle.focus();
   els.editTitle.select();
@@ -1167,6 +1243,7 @@ function openRequirementEditor(project, requirement) {
   setEditorMode("requirement");
   els.editorTitle.textContent = `编辑需求 / ${requirement.title}`;
   els.editTitle.value = requirement.title || "";
+  els.completeRequirementBtn.textContent = requirement.completed ? "恢复未完成" : "已完成";
   els.dialog.showModal();
   els.editTitle.focus();
   els.editTitle.select();
@@ -1188,7 +1265,27 @@ function openStageEditor(project, requirement, stage) {
   els.editIssueOpen.checked = Boolean(stage.issueOpen);
   els.editIssues.value = stage.issues || "";
   els.editNotes.value = stage.notes || "";
+  stageRepeat.set(stage.recurrence, stage.start);
   BoboCollab.openStageIssues(project, requirement, stage);
+  const context = editing;
+  context.noticeVersion = stage.version;
+  context.uploadVersion = stage.version;
+  BoboAttachments.open({
+    url: `/api/projects/${encodeURIComponent(project.id)}/requirements/${encodeURIComponent(requirement.id)}/stages/${encodeURIComponent(stage.id)}/attachments`,
+    text: stage.notificationText || '',
+    saveNotice: async text => {
+      const payload = await patchResource(`/api/projects/${encodeURIComponent(project.id)}/requirements/${encodeURIComponent(requirement.id)}/stages/${encodeURIComponent(stage.id)}`, { notificationText: text, version: context.noticeVersion }, { rerender: false });
+      if (payload?.stage && editing === context) {
+        const detailFields = ['title', 'type', 'start', 'end', 'owner', 'hours', 'status', 'notes', 'recurrence'];
+        // Only advance the details draft version when the details it was based on are unchanged.
+        if (detailFields.every(field => JSON.stringify(context.stage[field]) === JSON.stringify(payload.stage[field]))) context.stage = payload.stage;
+        context.noticeVersion = payload.stage.version;
+        context.uploadVersion = payload.stage.version;
+      }
+      return Boolean(payload);
+    },
+    upload: file => uploadStageAttachment(context, file)
+  });
   els.dialog.showModal();
   els.editTitle.focus();
 }
@@ -1214,6 +1311,55 @@ function reopenEditingFromState() {
   else if (previous.kind === "stage" && requirement && stage) openStageEditor(project, requirement, stage);
 }
 
+function renderRequirementOrder(focusId, direction) {
+  if (editing?.kind !== "project") return;
+  const context = editing;
+  const byId = new Map(context.project.requirements.map(item => [item.id, item]));
+  els.requirementOrderList.replaceChildren();
+  if (!context.requirementIds.length) { els.requirementOrderList.textContent = "暂无需求"; return; }
+  const ordered = context.requirementIds.map(id => byId.get(id));
+  for (const [index, requirement] of ordered.entries()) {
+    const row = document.createElement("div");
+    row.className = `requirement-order-item ${requirement.completed ? "completed" : ""}`;
+    row.dataset.requirementId = requirement.id;
+    const text = document.createElement("span"); text.textContent = requirement.title;
+    text.title = requirement.title;
+    const status = document.createElement("small"); status.textContent = requirement.completed ? "已完成" : "未完成";
+    const actions = [-1, 1].map(offset => {
+      const label = offset < 0 ? "上移" : "下移";
+      const adjacent = ordered[index + offset];
+      const button = iconButton(`${label} ${requirement.title}`, offset < 0 ? "↑" : "↓", () => {
+        [context.requirementIds[index], context.requirementIds[index + offset]] = [context.requirementIds[index + offset], context.requirementIds[index]];
+        renderRequirementOrder(requirement.id, offset);
+      });
+      button.dataset.direction = String(offset);
+      button.disabled = !adjacent || Boolean(adjacent.completed) !== Boolean(requirement.completed);
+      return button;
+    });
+    row.append(text, status, ...actions); els.requirementOrderList.append(row);
+  }
+  if (focusId) {
+    const row = [...els.requirementOrderList.children].find(item => item.dataset.requirementId === focusId);
+    const button = row?.querySelector(`[data-direction="${direction}"]`);
+    if (button && !button.disabled) button.focus();
+    else row?.querySelector('button:not(:disabled)')?.focus();
+  }
+}
+
+async function toggleRequirementCompletion() {
+  if (editing?.kind !== "requirement") return;
+  const context = editing;
+  const title = els.editTitle.value.trim();
+  if (!title) { alert("需求名称不能为空"); return; }
+  const completed = !context.requirement.completed;
+  if (!confirm(completed ? `确定将需求「${title}」标记为已完成？名称将显示删除线，并排到本项目需求列表底部。阶段和问题状态保留。` : `确定将需求「${title}」恢复为未完成？`)) return;
+  els.completeRequirementBtn.disabled = true; els.saveEditorBtn.disabled = true;
+  try {
+    const payload = await patchResource(`/api/projects/${encodeURIComponent(context.project.id)}/requirements/${encodeURIComponent(context.requirement.id)}`, { title, completed, version: context.requirement.version }, { rerender: false });
+    if (payload && editing === context) { editing = null; els.dialog.close(); render(); }
+  } finally { els.completeRequirementBtn.disabled = false; els.saveEditorBtn.disabled = false; }
+}
+
 async function saveEditor() {
   if (!editing) return;
   const value = els.editTitle.value.trim();
@@ -1226,8 +1372,12 @@ async function saveEditor() {
   if (editing.kind === "project") {
     payload = await patchResource(`/api/projects/${encodeURIComponent(editing.project.id)}`, {
       name: value,
+      requirementIds: editing.requirementIds,
       version: editing.project.version
-    }, { refit: true, rerender: false });
+    }, { refit: true, rerender: false, rebase: (entity, draft) => {
+      const currentIds = entity.requirements.map(item => item.id);
+      return { ...draft, requirementIds: [...draft.requirementIds.filter(id => currentIds.includes(id)), ...currentIds.filter(id => !draft.requirementIds.includes(id))] };
+    } });
     state.selectedProjectId = editing.project.id;
   } else if (editing.kind === "requirement") {
     payload = await patchResource(`/api/projects/${encodeURIComponent(editing.project.id)}/requirements/${encodeURIComponent(editing.requirement.id)}`, {
@@ -1241,7 +1391,10 @@ async function saveEditor() {
     const nextType = selectedType === CUSTOM_STAGE_TYPE ? value : selectedType;
     const start = els.editStart.value;
     const end = els.editEnd.value < start ? start : els.editEnd.value;
+    let recurrence;
+    try { recurrence = stageRepeat.read(start, end); } catch (error) { alert(error.message); return; }
     payload = await patchResource(`/api/projects/${encodeURIComponent(editing.project.id)}/requirements/${encodeURIComponent(editing.requirement.id)}/stages/${encodeURIComponent(stage.id)}`, {
+      recurrence,
       title: value,
       type: nextType,
       start,
@@ -1411,7 +1564,7 @@ function createStage(title, type, start, end) {
     owner: "",
     hours: 0,
     status: "未开始",
-    issueOpen: start > formatDate(new Date()),
+    issueOpen: false,
     issues: "",
     notes: ""
   };
@@ -1432,64 +1585,7 @@ async function createStageFromGrid(project, requirement, start) {
   }
 }
 
-async function addDateMarker() {
-  const project = getSelectedProject();
-  const scope = prompt(project ? "标记范围：输入 1 为系统级，输入 2 为当前项目级" : "当前未选择项目，只能新增系统级标记。输入 1 继续", "1");
-  if (!scope) return;
-  const isProjectScope = scope.trim() === "2" && project;
-  const date = prompt("标记日期（YYYY-MM-DD）", formatDate(new Date()));
-  if (!date || Number.isNaN(parseDate(date).getTime())) return;
-  const label = prompt("标记名称", "投产日");
-  if (!label || !label.trim()) return;
-  const colorInput = prompt("标记颜色：紫色/蓝色/绿色/橙色/红色，可留空使用默认颜色", "");
-  const color = resolveMarkerColor(colorInput, label);
-  const notes = prompt("备注（可留空）", "") || "";
-  const type = label.includes("投产") ? "production" : "custom";
-  const marker = {
-    id: uid("marker"),
-    date,
-    label: label.trim(),
-    type,
-    color,
-    notes: notes.trim()
-  };
-  const owner = isProjectScope ? project : getActiveSystem();
-  const nextMarkers = [...(owner.dateMarkers || []), marker];
-  const url = isProjectScope
-    ? `/api/projects/${encodeURIComponent(project.id)}`
-    : `/api/systems/${encodeURIComponent(owner.id)}`;
-  const payload = await patchResource(url, {
-    dateMarkers: nextMarkers,
-    version: owner.version
-  }, { refit: true });
-  if (payload) {
-    state.selectedProjectId = isProjectScope ? project.id : state.selectedProjectId;
-    BoboCollab.savePreferences(state, view);
-  }
-}
-
-function resolveMarkerColor(input, label) {
-  const value = (input || "").trim().toLowerCase();
-  const colorMap = {
-    "紫": "purple",
-    "紫色": "purple",
-    purple: "purple",
-    "蓝": "blue",
-    "蓝色": "blue",
-    blue: "blue",
-    "绿": "green",
-    "绿色": "green",
-    green: "green",
-    "橙": "orange",
-    "橙色": "orange",
-    orange: "orange",
-    "红": "red",
-    "红色": "red",
-    red: "red"
-  };
-  if (colorMap[value]) return colorMap[value];
-  return label.includes("投产") ? "purple" : "blue";
-}
+function addDateMarker() { openMarkerEditor(); }
 
 async function deleteDateMarker(owner, marker) {
   const confirmed = confirm(`确定删除日期标记「${marker.label}」吗？`);
@@ -1498,7 +1594,7 @@ async function deleteDateMarker(owner, marker) {
   await patchResource(url, {
     dateMarkers: (owner.dateMarkers || []).filter((item) => item.id !== marker.id),
     version: owner.version
-  }, { refit: true });
+  }, { refit: true, rebase: entity => ({ dateMarkers: (entity.dateMarkers || []).filter(item => item.id !== marker.id), version: entity.version }) });
 }
 
 async function shutdownServer() {
@@ -1550,15 +1646,21 @@ els.saveBtn.addEventListener("click", async () => {
   }
 });
 els.shutdownBtn?.addEventListener("click", shutdownServer);
+document.querySelector("#reportsBtn").addEventListener("click", () => {
+  BoboReports.open({ systemId: state.selectedSystemId, projectId: state.selectedProjectId });
+});
 els.editorForm.addEventListener("submit", (event) => {
   event.preventDefault();
   saveEditor();
 });
 els.closeEditorBtn.addEventListener("click", () => els.dialog.close());
 els.dialog.addEventListener("close", () => {
+  if (els.dialog.open) return; // A conflict resolution may already have reopened the editor.
+  BoboAttachments.reset();
   editing = null;
 });
 els.saveEditorBtn.addEventListener("click", saveEditor);
+els.completeRequirementBtn.addEventListener("click", toggleRequirementCompletion);
 els.deleteEditorBtn.addEventListener("click", deleteEditor);
 document.addEventListener("click", (event) => {
   if (!systemMenuOpen || els.systemPicker?.contains(event.target)) return;
@@ -1571,6 +1673,116 @@ document.addEventListener("keydown", (event) => {
   systemMenuOpen = false;
   openSystemActionsId = "";
   renderSystemPicker();
+});
+
+
+async function uploadStageAttachment(context, file, version = context.uploadVersion, allowRetry = true) {
+  const { project, requirement, stage } = context;
+  const url = `/api/projects/${encodeURIComponent(project.id)}/requirements/${encodeURIComponent(requirement.id)}/stages/${encodeURIComponent(stage.id)}/attachments`;
+  try {
+    const payload = await BoboCollab.saveResource(state, url, { method: 'POST', body: file, headers: { 'Content-Type': 'application/octet-stream', 'X-File-Name': encodeURIComponent(file.name), 'X-Stage-Version': String(version) } });
+    if (editing === context) {
+      const latest = state.systems.flatMap(s => s.projects).find(p => p.id === project.id)?.requirements.find(r => r.id === requirement.id)?.stages.find(s => s.id === stage.id);
+      if (latest) context.uploadVersion = latest.version;
+    }
+    render(); return payload;
+  } catch (error) {
+    if (allowRetry && error.payload?.code === 'VERSION_CONFLICT') {
+      const choice = await BoboCollab.resolveConflict(error, { filename: file.name, version });
+      if (choice === 'retry') return uploadStageAttachment(context, file, error.payload.entity.version, false);
+      if (choice === 'server') { await loadState(); reopenEditingFromState(); return null; }
+    }
+    throw error;
+  }
+}
+
+function stageOccurrences(stage) {
+  return BoboRecurrence.occurrences(stage.start, stage.end, stage.recurrence);
+}
+function recurrenceSummary(rule) {
+  return `每${rule.interval}${{ day: "天", week: "周", month: "月" }[rule.unit]}${rule.unit === "week" ? `（${rule.weekdays.map(n => "日一二三四五六"[n]).join("、")}）` : ""}`;
+}
+function repeatControls(parent, hint) {
+  const element = document.createElement("fieldset");
+  element.className = "repeat-controls full";
+  element.innerHTML = `<legend>周期性重复</legend><div class="repeat-grid">
+    <label class="field">重复方式<select data-repeat-mode><option value="none">不重复</option><option value="week">每周</option><option value="biweek">每两周</option><option value="month">每月</option><option value="custom">自定义间隔</option></select></label>
+    <label class="field" data-repeat-custom hidden>每隔<input data-repeat-interval type="number" min="1" max="120" value="1"></label>
+    <label class="field" data-repeat-custom hidden>单位<select data-repeat-unit><option value="day">天</option><option value="week">周</option><option value="month">月</option></select></label>
+    <label class="field" data-repeat-until hidden>重复截止日<input data-repeat-end type="date"></label></div>
+    <div class="repeat-weekdays" hidden>${[1,2,3,4,5,6,0].map(n => `<label><input type="checkbox" value="${n}">周${"日一二三四五六"[n]}</label>`).join("")}</div>
+    <p class="repeat-hint">${hint} 截止日包含当天，按每次开始日期判断；每月同日号，不存在该日的月份跳过。最多十年、1000 次。</p>`;
+  parent.append(element);
+  const q = selector => element.querySelector(selector);
+  const mode = q('[data-repeat-mode]'), interval = q('[data-repeat-interval]'), unit = q('[data-repeat-unit]'), until = q('[data-repeat-end]');
+  const weekdays = [...element.querySelectorAll('.repeat-weekdays input')];
+  function sync() {
+    const active = mode.value !== 'none';
+    element.querySelectorAll('[data-repeat-custom]').forEach(el => { el.hidden = mode.value !== 'custom'; });
+    q('[data-repeat-until]').hidden = !active;
+    q('.repeat-weekdays').hidden = !(mode.value === 'week' || mode.value === 'biweek' || (mode.value === 'custom' && unit.value === 'week'));
+    until.required = active;
+  }
+  mode.addEventListener('change', sync); unit.addEventListener('change', sync);
+  return { element,
+    set(rule, start) {
+      mode.value = !rule ? 'none' : rule.unit === 'week' && rule.interval === 1 ? 'week' : rule.unit === 'week' && rule.interval === 2 ? 'biweek' : rule.unit === 'month' && rule.interval === 1 ? 'month' : 'custom';
+      interval.value = rule?.interval || 1; unit.value = rule?.unit || 'week'; until.value = rule?.until || addDays(start, 60);
+      weekdays.forEach(box => { box.checked = (rule?.weekdays || [parseDate(start).getDay()]).includes(Number(box.value)); }); sync();
+    },
+    read(start, end) {
+      if (mode.value === 'none') return null;
+      const rule = { unit: mode.value === 'custom' ? unit.value : mode.value === 'month' ? 'month' : 'week', interval: mode.value === 'custom' ? Number(interval.value) : mode.value === 'biweek' ? 2 : 1, until: until.value };
+      if (rule.unit === 'week') rule.weekdays = weekdays.filter(box => box.checked).map(box => Number(box.value));
+      BoboRecurrence.occurrences(start, end, rule); return rule;
+    }
+  };
+}
+const stageRepeat = repeatControls(els.editorGrid, '任务系列共享负责人、工时、状态和问题；双击任一任务条编辑整个系列，开始/结束为首期模板。报表仍按一个阶段统计。');
+const markerDialog = document.createElement('dialog');
+markerDialog.className = 'marker-dialog';
+markerDialog.innerHTML = `<form id="markerForm"><div class="editor-head"><h2 id="markerEditorTitle">日期标记</h2><button type="button" class="icon-button" aria-label="关闭日期标记">×</button></div><div class="editor-grid">
+  <label class="field">范围<select id="markerScope"><option value="system">当前系统</option><option value="project">当前项目</option></select></label>
+  <label class="field">名称<input id="markerLabel" required maxlength="200"></label>
+  <label class="field">日期 / 范围开始<input id="markerDate" type="date" required></label>
+  <label class="field">颜色<select id="markerColor">${Object.entries(MARKER_COLORS).map(([v,n]) => `<option value="${v}">${n}</option>`).join('')}</select></label>
+  <label class="field full">备注<textarea id="markerNotes" rows="2"></textarea></label>
+</div><p class="form-error" id="markerError" role="alert"></p><menu class="editor-actions"><button type="submit">保存标记</button></menu></form>`;
+document.body.append(markerDialog);
+const markerField = id => markerDialog.querySelector('#' + id);
+const markerRepeat = repeatControls(markerDialog.querySelector('.editor-grid'), '保存一组规则；再次编辑可缩短范围、调整星期或改为单次。');
+let markerEditing = null;
+markerDialog.querySelector('[aria-label="关闭日期标记"]').addEventListener('click', () => markerDialog.close());
+function openMarkerEditor(owner, marker) {
+  markerEditing = { owner, marker };
+  markerField('markerEditorTitle').textContent = marker ? '编辑日期标记系列' : '新增日期标记';
+  markerField('markerScope').value = owner && !owner.projects ? 'project' : 'system';
+  markerField('markerScope').disabled = Boolean(marker);
+  markerField('markerScope').querySelector('[value="project"]').disabled = !getSelectedProject();
+  markerField('markerLabel').value = marker?.label || '项目会';
+  markerField('markerDate').value = marker?.date || formatDate(new Date());
+  markerField('markerColor').value = marker?.color || 'blue';
+  markerField('markerNotes').value = marker?.notes || '';
+  markerField('markerError').textContent = '';
+  markerRepeat.set(marker?.recurrence, markerField('markerDate').value);
+  markerDialog.showModal();
+}
+markerField('markerForm').addEventListener('submit', async event => {
+  event.preventDefault();
+  const button = markerDialog.querySelector('[type="submit"]');
+  try {
+    const date = markerField('markerDate').value;
+    const label = markerField('markerLabel').value.trim();
+    if (!label) throw new Error('标记名称不能为空');
+    const recurrence = markerRepeat.read(date, date);
+    const owner = markerEditing.owner || (markerField('markerScope').value === 'project' ? getSelectedProject() : getActiveSystem());
+    const marker = { ...markerEditing.marker, id: markerEditing.marker?.id || uid('marker'), date, label, color: markerField('markerColor').value, notes: markerField('markerNotes').value.trim(), type: label.includes('投产') ? 'production' : 'custom', recurrence };
+    const merge = entity => ({ dateMarkers: [...(entity.dateMarkers || []).filter(item => item.id !== marker.id), marker], version: entity.version });
+    button.disabled = true;
+    const payload = await patchResource(owner.projects ? `/api/systems/${encodeURIComponent(owner.id)}` : `/api/projects/${encodeURIComponent(owner.id)}`, merge(owner), { refit: true, rebase: merge });
+    if (payload) markerDialog.close();
+  } catch (error) { markerField('markerError').textContent = error.message; }
+  finally { button.disabled = false; }
 });
 
 applySavedLayout();

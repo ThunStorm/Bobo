@@ -17,6 +17,7 @@
           <div id="syncNotice" class="sync-notice" hidden>有其他用户更新了数据</div>
           <div id="systemPicker" class="system-picker"></div>
           <button id="saveBtn" type="button">保存</button>
+          <button id="reportsBtn" type="button">报表</button>
           <div class="account-menu-wrap">
             <button id="accountBtn" class="account-trigger" type="button" aria-haspopup="menu" aria-expanded="false">
               <span id="accountInitial" class="account-initial">U</span>
@@ -77,10 +78,16 @@
         <div id="editorTabs" class="editor-tabs" hidden>
           <button class="editor-tab active" data-editor-tab="details" type="button">阶段详情</button>
           <button class="editor-tab" data-editor-tab="issues" type="button">待处理问题 <span id="issueCount">0</span></button>
+          <button class="editor-tab" data-editor-tab="attachments" type="button">附件</button>
         </div>
         <section id="editorDetailsPanel" class="editor-panel">
           <div class="editor-grid">
             <label id="editTitleField" class="field full"><span id="editTitleLabel">标题</span><input id="editTitle" required></label>
+            <section id="projectRequirementOrder" class="full" aria-labelledby="requirementOrderTitle" hidden>
+              <h3 id="requirementOrderTitle">需求顺序</h3>
+              <p class="repeat-hint">使用上移、下移调整组内顺序，点击“保存项目”生效；已完成需求始终排在底部。</p>
+              <div id="requirementOrderList" class="requirement-order-list"></div>
+            </section>
             <label class="field" data-stage-field>阶段<select id="editType"></select></label>
             <label class="field" data-stage-field>开始<input id="editStart" type="date" required></label>
             <label class="field" data-stage-field>结束<input id="editEnd" type="date" required></label>
@@ -142,8 +149,18 @@
             <div id="issueEmpty" class="issue-empty">选择一个问题，或新建待处理项。</div>
           </div>
         </section>
+        <section id="editorAttachmentsPanel" class="editor-panel attachments-panel" hidden>
+          <label class="field">通知文本<textarea id="attachmentNotice" rows="7" maxlength="100000" placeholder="在此粘贴通知文本；点击保存通知后写入当前阶段"></textarea></label>
+          <button id="saveNoticeBtn" type="button">保存通知</button>
+          <div id="attachmentDropZone" class="attachment-drop-zone" tabindex="0" role="button" aria-label="选择或拖放附件">拖放文件到这里，或点击选择文件<input id="attachmentFiles" type="file" multiple hidden></div>
+          <p class="attachment-hint">支持任意格式，单个文件最大 50 MiB；上传后立即保存。服务启动时清理上传超过六个月的附件，通知文本不受影响。</p>
+          <p id="attachmentMessage" class="form-error" role="status" aria-live="polite"></p>
+          <button id="refreshAttachmentsBtn" class="secondary" type="button">刷新附件列表</button>
+          <div id="attachmentList" class="attachment-list"></div>
+        </section>
         <menu class="editor-actions">
           <span></span>
+          <button id="completeRequirementBtn" type="button" hidden>已完成</button>
           <button id="saveEditorBtn" value="default" type="button">保存阶段</button>
         </menu>
       </form>
@@ -192,7 +209,47 @@
       </form>
     </dialog>
 
+    <dialog id="reportsDialog" class="reports-dialog" aria-labelledby="reportsTitle">
+      <div class="editor-head">
+        <h2 id="reportsTitle">报表</h2>
+        <button id="closeReportsBtn" class="icon-button" type="button" aria-label="关闭报表">×</button>
+      </div>
+      <div class="reports-controls">
+        <label class="field">报告类型<select id="reportMode"><option value="overview">状态概览</option><option value="handoff">工作交接</option><option value="todo">Todo 清单</option></select></label>
+        <label class="field">数据范围<select id="reportScope"><option value="project">当前项目</option><option value="system">当前系统</option></select></label>
+        <label class="check-field"><input id="reportCompleted" type="checkbox">附带已完成 / 已关闭清单</label>
+        <button id="refreshReportBtn" type="button">刷新数据</button>
+      </div>
+      <p id="reportPurpose" class="report-message"></p>
+      <fieldset id="reportPeriodControls" class="report-period-controls" hidden>
+        <legend>日期范围与新增比较</legend>
+        <div class="reports-controls">
+          <label class="field">开始日期<input id="reportDateStart" type="date"></label>
+          <label class="field">结束日期<input id="reportDateEnd" type="date"></label>
+          <div class="report-period-shortcuts"><button type="button" data-report-period="week">本周</button><button type="button" data-report-period="next">下周</button><button type="button" data-report-period="all">全部日期</button></div>
+          <label class="field">待办排序<select id="reportSort"><option value="priority">风险/截止日优先</option><option value="new" disabled>新增在前（需基准）</option><option value="created">按创建记录倒序</option></select></label>
+          <label class="check-field"><input id="reportIncludeUndated" type="checkbox">包含无有效截止日期</label>
+          <label class="check-field"><input id="reportIncludeCarryover" type="checkbox">包含期前遗留未完成</label>
+        </div>
+        <div class="report-baseline-controls"><input id="reportBaselineFile" type="file" accept=".html,text/html" hidden><button id="reportImportBaselineBtn" type="button">导入上次 HTML 比较新增</button><button id="reportClearBaselineBtn" type="button" disabled>清除比较</button></div>
+        <p id="reportBaselineStatus" class="report-message" role="status" aria-live="polite">未导入基准；先导出本次 HTML，下次导入即可比较。仅在本机解析文件，不上传。</p>
+      </fieldset>
+      <p id="reportMessage" class="report-message" role="status" aria-live="polite"></p>
+      <label id="reportNoteField" class="field report-note" hidden>临时交接说明（人工填写，关闭即丢弃）<textarea id="reportNote" rows="3" maxlength="10000" placeholder="接收人、补充说明等；不保存到业务数据"></textarea></label>
+      <article id="reportPreview" class="report-document" aria-busy="false"></article>
+      <div class="reports-actions">
+        <span class="report-export-hint">PDF 将打开打印窗口，请选择另存为 PDF</span>
+        <button id="reportMarkdownBtn" type="button" disabled>下载 Markdown</button>
+        <button id="reportCsvBtn" type="button" disabled>下载 CSV</button>
+        <button id="reportHtmlBtn" type="button" disabled>导出 HTML</button>
+        <button id="reportPrintBtn" type="button" disabled>导出 PDF</button>
+      </div>
+    </dialog>
+
     <script src="/collab.js"></script>
+    <script src="/reports.js"></script>
+    <script src="/recurrence.js"></script>
+    <script src="/attachments.js"></script>
     <script src="/app.js"></script>
   </body>
 </html>

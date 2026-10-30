@@ -70,7 +70,7 @@ test("legacy state migrates to project folders and preserves issue text", () => 
   }
 });
 
-test("future stage creates an open unassigned issue", () => {
+test("future stages and stale derived flags never create issues during state saves", () => {
   const dir = tempDir("future-issue");
   try {
     const store = createDataStore(dir);
@@ -78,9 +78,8 @@ test("future stage creates an open unassigned issue", () => {
     store.saveState(sampleState(), meta.revision, "user-admin");
     const state = store.composeState();
     const project = state.systems[0].projects[0];
-    assert.equal(project.issues.length, 1);
-    assert.equal(project.issues[0].title, "待处理：未来开发");
-    assert.equal(project.issues[0].status, "open");
+    assert.equal(project.issues.length, 0);
+    assert.equal(project.requirements[0].stages[0].issueOpen, false);
   } finally {
     cleanup(dir);
   }
@@ -110,7 +109,7 @@ test("issue close stamps the server-side user and version conflicts are detected
     const store = createDataStore(dir);
     const meta = store.getMeta();
     store.saveState(sampleState(), meta.revision, "user-admin");
-    const issue = store.composeState().systems[0].projects[0].issues[0];
+    const issue = store.createIssue("project-a", { stageId: "stage-a", title: "手工问题" }, "user-admin").issue;
     const closed = store.setIssueClosed("project-a", issue.id, true, "user-member", issue.version);
     assert.equal(closed.issue.status, "closed");
     assert.equal(closed.issue.closedByUserId, "user-member");
